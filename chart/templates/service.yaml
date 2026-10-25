@@ -7,13 +7,17 @@ metadata:
 spec:
   type: {{ .Values.service.type }}
   ports:
+    {{- if .Values.debugFwd.enabled }}
     - port: {{ .Values.service.debuggingPort }}
       targetPort: debug
       protocol: TCP
       name: debug
+    {{- end }}
+    {{- if .Values.xpra.enabled }}
     - port: {{ .Values.service.xpraPort }}
       targetPort: xpra
       protocol: TCP
       name: xpra
+    {{- end }}
   selector:
     {{- include "server-browser.selectorLabels" . | nindent 4 }}

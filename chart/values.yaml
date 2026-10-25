@@ -42,10 +42,11 @@ chromium:
   securityContext: {}
 
   # Gateway API HTTPRoute exposing the CDP debugger endpoint (via
-  # debug-fwd). Disabled/unset by default since this chart is
-  # cluster-agnostic until integrated elsewhere -- set gatewayName/
-  # gatewayNamespace and hostname to wire it up. Kept separate from
-  # xpra's own httpRoute block so each can bind to a different gateway.
+  # debug-fwd). Only takes effect when debugFwd.enabled is also true.
+  # Disabled/unset by default since this chart is cluster-agnostic until
+  # integrated elsewhere -- set gatewayName/gatewayNamespace and
+  # hostname to wire it up. Kept separate from xpra's own httpRoute
+  # block so each can bind to a different gateway.
   httpRoute:
     enabled: false
     gatewayName: ""
@@ -57,7 +58,11 @@ chromium:
 # 127.0.0.1:debuggingPort inside the pod, working around the chromium
 # >=M113 CDP loopback-only restriction (see chromium.debuggingPort
 # above). Runs in its own container sharing the pod's network namespace.
+# Disabled by default -- the CDP debugging endpoint is opt-in per
+# deployment, same as its httpRoute below.
 debugFwd:
+  enabled: false
+
   image:
     repository: alpine/socat
     pullPolicy: IfNotPresent
@@ -68,8 +73,11 @@ debugFwd:
 
 # The xpra sidecar. Shares the chromium container's X11 socket
 # (/tmp/.X11-unix, via an emptyDir) and shadows its display, rather than
-# starting/owning an application itself.
+# starting/owning an application itself. Disabled by default -- enable
+# it to get an interactive display of the chromium session.
 xpra:
+  enabled: false
+
   image:
     repository: ghcr.io/m1dugh/server-browser/xpra
     pullPolicy: IfNotPresent
@@ -93,9 +101,10 @@ xpra:
   resources: {}
   securityContext: {}
 
-  # Gateway API HTTPRoute exposing the xpra HTML5 UI. Disabled/unset by
-  # default -- see chromium.httpRoute above; kept independent so xpra and
-  # the debugger endpoint can bind to different gateways.
+  # Gateway API HTTPRoute exposing the xpra HTML5 UI. Only takes effect
+  # when xpra.enabled is also true. Disabled/unset by default -- see
+  # chromium.httpRoute above; kept independent so xpra and the debugger
+  # endpoint can bind to different gateways.
   httpRoute:
     enabled: false
     gatewayName: ""

@@ -1,4 +1,4 @@
-{{- if .Values.chromium.httpRoute.enabled }}
+{{- if and .Values.debugFwd.enabled .Values.chromium.httpRoute.enabled }}
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:

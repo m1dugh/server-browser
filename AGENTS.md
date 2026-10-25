@@ -103,6 +103,14 @@ one private, one public) by whoever deploys this chart.
   (`gateway.networking.k8s.io/v1`). They are intentionally two separate
   blocks, not a shared top-level `httpRoute`, specifically so the
   debugger and xpra UI can be exposed through two different Gateways.
+- `debugFwd.enabled`/`xpra.enabled` both default to `false` — only the
+  `chromium` container runs out of the box; each sidecar (and its
+  container, Service port, and `x11-socket` emptyDir volume for xpra)
+  is opt-in per deployment. `chromium.httpRoute.enabled` only takes
+  effect when `debugFwd.enabled` is also true (the debugger Service
+  port it routes to doesn't exist otherwise), and likewise
+  `xpra.httpRoute.enabled` requires `xpra.enabled` — enforced in the
+  templates via `and`, not just documented.
 
 ## Progress
 

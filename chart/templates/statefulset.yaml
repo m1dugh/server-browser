@@ -53,10 +53,13 @@ spec:
             initialDelaySeconds: 1
             periodSeconds: 5
           volumeMounts:
+            {{- if .Values.xpra.enabled }}
             - name: x11-socket
               mountPath: /tmp/.X11-unix
+            {{- end }}
             - name: user-data
               mountPath: /data
+        {{- if .Values.debugFwd.enabled }}
         - name: debug-fwd
           {{- with .Values.debugFwd.securityContext }}
           securityContext:
@@ -75,6 +78,8 @@ spec:
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+        {{- end }}
+        {{- if .Values.xpra.enabled }}
         - name: xpra
           {{- with .Values.xpra.securityContext }}
           securityContext:
@@ -111,6 +116,7 @@ spec:
           volumeMounts:
             - name: x11-socket
               mountPath: /tmp/.X11-unix
+        {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
@@ -124,8 +130,10 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       volumes:
+        {{- if .Values.xpra.enabled }}
         - name: x11-socket
           emptyDir: {}
+        {{- end }}
         {{- if not .Values.persistence.enabled }}
         - name: user-data
           emptyDir: {}
