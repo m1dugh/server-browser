@@ -1,0 +1,76 @@
+name: Release and push Helm chart
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version part to bump
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Bump chart version
+        id: version
+        run: |
+          CURRENT_VERSION="$(sed -n 's/^version: //p' chart/Chart.yaml)"
+          NEXT_VERSION="$(python3 - "$CURRENT_VERSION" "${{ inputs.bump }}" <<'EOF'
+          import sys
+          major, minor, patch = (int(x) for x in sys.argv[1].split("."))
+          bump = sys.argv[2]
+          if bump == "major":
+              major, minor, patch = major + 1, 0, 0
+          elif bump == "minor":
+              minor, patch = minor + 1, 0
+          else:
+              patch += 1
+          print(f"{major}.{minor}.{patch}")
+          EOF
+          )"
+
+          sed -i "s/^version: .*/version: ${NEXT_VERSION}/" chart/Chart.yaml
+          sed -i "s/^appVersion: .*/appVersion: \"${NEXT_VERSION}\"/" chart/Chart.yaml
+
+          echo "version=${NEXT_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Commit and tag
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add chart/Chart.yaml
+          git commit -m "chore(chart): release ${VERSION}"
+          git tag "chart-v${VERSION}"
+          git push origin HEAD:main
+          git push origin "chart-v${VERSION}"
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+
+      - name: Package and push chart
+        run: |
+          helm package chart --destination /tmp/chart-dist
+          helm push "/tmp/chart-dist/server-browser-${{ steps.version.outputs.version }}.tgz" \
+            "oci://ghcr.io/${{ github.repository }}/charts"
