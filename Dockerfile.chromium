@@ -6,10 +6,10 @@
 #
 FROM alpine:3.24
 
-# Pinned to the version available in alpine 3.24's community repo at
-# the time this was written. Override with a different apk version
-# string to pin to another release.
-ARG CHROMIUM_VERSION="155.0.8059.84-r0"
+# Version is sourced from versions.json at the repo root (single
+# source of truth, shared with the CI pipeline that builds this image)
+# and passed in as a build-arg -- no default here on purpose.
+ARG CHROMIUM_VERSION
 
 RUN apk add --no-cache \
       xvfb \
