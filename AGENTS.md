@@ -131,8 +131,25 @@ one private, one public) by whoever deploys this chart.
   the pushed tag (plus a floating `latest` tag), using the ephemeral
   `GITHUB_TOKEN` to authenticate — same-tag pushes are allowed to
   overwrite. Layer caching uses the `gha` backend
-  (`cache-from`/`cache-to: type=gha`). The equivalent xpra and Helm
-  chart pipelines haven't been added yet.
+  (`cache-from`/`cache-to: type=gha`).
+  `.github/workflows/xpra-image.yaml` mirrors this exactly for xpra
+  (triggered on `xpra/**`, reads `xpra/version.txt`, pushes to
+  `ghcr.io/<owner>/server-browser/xpra`).
+- `.github/workflows/chart-release.yaml` releases the chart —
+  deliberately `workflow_dispatch`-only (a `bump: patch|minor|major`
+  input), not triggered on push to `chart/`. An auto-trigger was
+  considered (semantic-release off conventional commits scoped to
+  `chart/`) but dropped: it would need the release job to push a
+  version-bump commit back to `main` itself, which risks retriggering
+  the same workflow in a loop and also hits branch-protection
+  complexity the user didn't want to deal with for this chart. Manual
+  dispatch sidesteps both — nothing ever triggers this workflow except
+  a human running it. It bumps `chart/Chart.yaml`'s
+  `version`/`appVersion`, commits as `github-actions[bot]`, tags
+  `chart-v<version>`, pushes both to `main`, then packages and pushes
+  the chart as an OCI artifact to
+  `oci://ghcr.io/<owner>/server-browser/charts`. See README.md's
+  "Releasing a new chart version" for the user-facing steps.
 
 ## Not yet started
 

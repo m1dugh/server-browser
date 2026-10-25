@@ -100,6 +100,29 @@ rather than compiling either from source. See `AGENTS.md` for the full
 set of implementation decisions, open questions, and current project
 status.
 
+## Releasing a new chart version
+
+The `chromium`/`xpra` images are built and pushed to `ghcr.io`
+automatically whenever their respective folders change. The Helm chart
+is released separately and manually, since chart changes don't
+necessarily line up with image changes:
+
+1. Go to this repo's **Actions** tab → **Release and push Helm chart**
+   → **Run workflow**.
+2. Pick the version bump (`patch`, `minor`, or `major`) and run it.
+
+The workflow bumps `chart/Chart.yaml`'s `version`/`appVersion`, commits
+and tags that (`chart-vX.Y.Z`) on `main`, then packages and pushes the
+chart as an OCI artifact to
+`oci://ghcr.io/<owner>/server-browser/charts`. Install/upgrade it with
+Helm's OCI support, e.g.:
+
+```sh
+helm upgrade --install server-browser \
+  oci://ghcr.io/<owner>/server-browser/charts/server-browser \
+  --version X.Y.Z
+```
+
 ## Status
 
 This is a standalone Helm chart (`chart/`), meant to be usable by
