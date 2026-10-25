@@ -18,6 +18,7 @@ mkdir -p /run/server-browser
 touch /run/server-browser/ready
 
 exec xpra shadow "${DISPLAY}" \
+  --bind=none \
   --bind-ws="${BIND_WS}" \
   --html=on \
   --daemon=no \
