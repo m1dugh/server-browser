@@ -6,9 +6,9 @@
 #
 FROM alpine:3.24
 
-# Version is sourced from versions.json at the repo root (single
-# source of truth, shared with the CI pipeline that builds this image)
-# and passed in as a build-arg -- no default here on purpose.
+# Version is sourced from version.txt in this directory (single source
+# of truth, shared with the CI pipeline that builds this image) and
+# passed in as a build-arg -- no default here on purpose.
 ARG CHROMIUM_VERSION
 
 RUN apk add --no-cache \
@@ -21,7 +21,7 @@ RUN addgroup -S chromium && adduser -S chromium -G chromium \
     && mkdir -p /data /run/server-browser \
     && chown -R chromium:chromium /data /run/server-browser
 
-COPY entrypoint.chromium.sh /entrypoint.sh
+COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 USER chromium

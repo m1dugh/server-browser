@@ -7,15 +7,15 @@
 # needed.
 FROM alpine:3.24
 
-# Pinned to the version available in alpine 3.24's community repo at
-# the time this was written. Override with a different apk version
-# string to pin to another release.
-ARG XPRA_VERSION="6.4.3-r0"
+# Version is sourced from version.txt in this directory (single source
+# of truth, shared with the CI pipeline that builds this image) and
+# passed in as a build-arg -- no default here on purpose.
+ARG XPRA_VERSION
 
 RUN apk add --no-cache \
       xpra=${XPRA_VERSION}
 
-COPY entrypoint.xpra.sh /entrypoint.sh
+COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 ENV XPRA_PORT=10000 \

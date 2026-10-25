@@ -94,7 +94,7 @@ versa, depending on the deployment).
 No single upstream Docker image does "headful Chromium with CDP, no
 built-in display server" plus a maintained official Xpra image — both
 were evaluated and ruled out during design, so this project builds its
-own minimal images for both (`Dockerfile.chromium`, `Dockerfile.xpra`),
+own minimal images for both (`chromium/Dockerfile`, `xpra/Dockerfile`),
 installing `chromium` and `xpra` from Alpine's own package repository
 rather than compiling either from source. See `AGENTS.md` for the full
 set of implementation decisions, open questions, and current project

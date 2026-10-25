@@ -60,14 +60,17 @@ one private, one public) by whoever deploys this chart.
 
 - Chromium base image: **Alpine** (apk `chromium` package), not Debian —
   chosen over Debian despite Debian being Xpra's native packaging
-  target. Verified working: both `Dockerfile.chromium` and
-  `Dockerfile.xpra` build successfully and install their respective apk
+  target. Verified working: both `chromium/Dockerfile` and
+  `xpra/Dockerfile` build successfully and install their respective apk
   packages without issue.
 - Both Dockerfiles pin `FROM alpine:3.24` (not `alpine:edge`) — chromium
   and xpra are both available in 3.24's `community` repo
   (`155.0.8059.84-r0` / `6.4.3-r0` respectively), so edge isn't needed.
-  `ARG CHROMIUM_VERSION`/`ARG XPRA_VERSION` default to those pinned
-  versions; override with a different apk version string to bump.
+  Each component owns a `version.txt` (`chromium/version.txt`,
+  `xpra/version.txt`) holding that pinned apk version string as the
+  single source of truth — the CI pipeline reads it to supply both the
+  `ARG CHROMIUM_VERSION`/`ARG XPRA_VERSION` build-arg and the pushed
+  image tag. Bump the version by editing that file.
 - `debug-fwd` container name (not `socat`) is intentional — short for
   "debug forward", describing its role rather than its implementation.
 - Both entrypoints wait on the shared X11 socket in a `sleep 1` loop
@@ -113,12 +116,23 @@ one private, one public) by whoever deploys this chart.
   with its own readinessProbe (see the ready-file decision above);
   `templates/service.yaml` exposes both ports; `templates/httproute-xpra.yaml`
   and `templates/httproute-debugger.yaml` are independently toggleable.
-- `Dockerfile.chromium` + `entrypoint.chromium.sh` and `Dockerfile.xpra`
-  + `entrypoint.xpra.sh` added at the repo root. Both build successfully
-  (`docker build`, verified) on `alpine:3.24`.
+- `chromium/` (`Dockerfile`, `entrypoint.sh`, `version.txt`) and
+  `xpra/` (`Dockerfile`, `entrypoint.sh`, `version.txt`) added at the
+  repo root, one self-contained folder per component. Both build
+  successfully (`docker build`, verified) on `alpine:3.24`.
   `chromium.image.repository`/`tag` and `xpra.image.repository`/`tag`
   are still blank in `values.yaml` since these images aren't published
   anywhere yet.
+- A GitHub Actions pipeline (`.github/workflows/chromium-image.yaml`)
+  builds and pushes the chromium image to
+  `ghcr.io/<owner>/server-browser/chromium`, triggered only on changes
+  under `chromium/` (plus the workflow file itself). It reads
+  `chromium/version.txt` for both the `CHROMIUM_VERSION` build-arg and
+  the pushed tag (plus a floating `latest` tag), using the ephemeral
+  `GITHUB_TOKEN` to authenticate — same-tag pushes are allowed to
+  overwrite. Layer caching uses the `gha` backend
+  (`cache-from`/`cache-to: type=gha`). The equivalent xpra and Helm
+  chart pipelines haven't been added yet.
 
 ## Not yet started
 
