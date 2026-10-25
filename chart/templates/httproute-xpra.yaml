@@ -16,6 +16,6 @@ spec:
     - {{ .Values.xpra.httpRoute.hostname | quote }}
   rules:
     - backendRefs:
-        - name: {{ include "server-browser.fullname" . }}
-          port: {{ .Values.service.xpraPort }}
+        - name: {{ include "server-browser.fullname" . }}-xpra
+          port: {{ .Values.xpra.service.port }}
 {{- end }}

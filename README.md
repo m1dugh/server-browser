@@ -89,7 +89,7 @@ different Gateways — e.g. the CDP endpoint kept private/internal-only
 for agents, the viewer exposed more broadly for human access, or vice
 versa, depending on the deployment).
 
-Only the `chromium` container runs by default — `debug-fwd` (`debugFwd.enabled`)
+Only the `chromium` container runs by default — `debug-fwd` (`chromium.debug.enabled`)
 and `xpra` (`xpra.enabled`) are both opt-in, each toggled independently
 in `values.yaml` alongside their own `httpRoute.enabled`.
 

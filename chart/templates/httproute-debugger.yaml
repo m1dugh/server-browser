@@ -1,4 +1,4 @@
-{{- if and .Values.debugFwd.enabled .Values.chromium.httpRoute.enabled }}
+{{- if and .Values.chromium.debug.enabled .Values.chromium.debug.httpRoute.enabled }}
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -7,15 +7,15 @@ metadata:
     {{- include "server-browser.labels" . | nindent 4 }}
 spec:
   parentRefs:
-    - name: {{ .Values.chromium.httpRoute.gatewayName }}
-      {{- with .Values.chromium.httpRoute.gatewayNamespace }}
+    - name: {{ .Values.chromium.debug.httpRoute.gatewayName }}
+      {{- with .Values.chromium.debug.httpRoute.gatewayNamespace }}
       namespace: {{ . }}
       {{- end }}
-      sectionName: {{ .Values.chromium.httpRoute.sectionName }}
+      sectionName: {{ .Values.chromium.debug.httpRoute.sectionName }}
   hostnames:
-    - {{ .Values.chromium.httpRoute.hostname | quote }}
+    - {{ .Values.chromium.debug.httpRoute.hostname | quote }}
   rules:
     - backendRefs:
-        - name: {{ include "server-browser.fullname" . }}
-          port: {{ .Values.service.debuggingPort }}
+        - name: {{ include "server-browser.fullname" . }}-debugger
+          port: {{ .Values.chromium.debug.service.port }}
 {{- end }}

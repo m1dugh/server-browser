@@ -46,11 +46,11 @@ display session are stateful/singleton by nature) with three containers:
 Persistence: a PVC backing chromium's `--user-data-dir` (profile, cache,
 cookies, extensions), mounted only into the `chromium` container.
 
-A ClusterIP Service exposes both the CDP port (via `debug-fwd`) and the
-Xpra port. Two optional Gateway API `HTTPRoute`s (disabled by default,
-one under `chromium.httpRoute` for the debugger endpoint, one under
-`xpra.httpRoute` for the xpra UI) can front each service through an
-existing Gateway — each block has its own
+A dedicated ClusterIP Service exposes the CDP port (via `debug-fwd`) and
+another exposes the Xpra port. Two optional Gateway API `HTTPRoute`s
+(disabled by default, one under `chromium.debug.httpRoute` for the
+debugger endpoint, one under `xpra.httpRoute` for the xpra UI) can front
+each service through an existing Gateway — each block has its own
 `gatewayName`/`gatewayNamespace`/`sectionName`/`hostname`, deliberately
 kept separate (rather than a single shared `httpRoute` block) so the
 debugger and the xpra UI can be bound to two different Gateways (e.g.
@@ -81,9 +81,11 @@ one private, one public) by whoever deploys this chart.
   not after. Each container's own readinessProbe in
   `templates/statefulset.yaml` is a plain `test -f
   /run/server-browser/ready` exec check against that file.
-- Values.yaml keys: `chromium`, `debugFwd`, `xpra`, `persistence`,
-  `service` — each top-level block owns its own
-  `image`/`resources`/`securityContext` where applicable.
+- Values.yaml keys: `chromium`, `xpra`, `persistence` — each top-level
+  block owns its own `image`/`resources`/`securityContext` where
+  applicable. The debug-forwarding sidecar lives nested under
+  `chromium.debug` (not as a top-level `debugFwd` block) since it exists
+  solely to expose chromium's own CDP port — see below.
 - No suitable combined chromium+xpra image exists upstream at all
   (checked specifically for this) — both `chromium` and `xpra` images
   are authored in this project rather than sourced externally.
@@ -97,20 +99,41 @@ one private, one public) by whoever deploys this chart.
 - `persistence.enabled` defaults to `false` — when disabled, the
   StatefulSet falls back to an `emptyDir` for chromium's user-data dir
   instead of a `volumeClaimTemplate`.
-- `chromium.httpRoute`/`xpra.httpRoute` each default to `enabled: false`
-  with no gateway/hostname set, since this chart has no cluster/Gateway
-  of its own to attach to yet — both are plain Gateway API `HTTPRoute`s
-  (`gateway.networking.k8s.io/v1`). They are intentionally two separate
-  blocks, not a shared top-level `httpRoute`, specifically so the
-  debugger and xpra UI can be exposed through two different Gateways.
-- `debugFwd.enabled`/`xpra.enabled` both default to `false` — only the
-  `chromium` container runs out of the box; each sidecar (and its
-  container, Service port, and `x11-socket` emptyDir volume for xpra)
-  is opt-in per deployment. `chromium.httpRoute.enabled` only takes
-  effect when `debugFwd.enabled` is also true (the debugger Service
-  port it routes to doesn't exist otherwise), and likewise
+- `chromium.debug.httpRoute`/`xpra.httpRoute` each default to
+  `enabled: false` with no gateway/hostname set, since this chart has no
+  cluster/Gateway of its own to attach to yet — both are plain Gateway
+  API `HTTPRoute`s (`gateway.networking.k8s.io/v1`). They are
+  intentionally two separate blocks, not a shared top-level `httpRoute`,
+  specifically so the debugger and xpra UI can be exposed through two
+  different Gateways.
+- `chromium.debug.enabled`/`xpra.enabled` both default to `false` — only
+  the `chromium` container runs out of the box; each sidecar (and its
+  container, Service, and `x11-socket` emptyDir volume for xpra)
+  is opt-in per deployment. `chromium.debug.httpRoute.enabled` only
+  takes effect when `chromium.debug.enabled` is also true (the debugger
+  Service it routes to doesn't exist otherwise), and likewise
   `xpra.httpRoute.enabled` requires `xpra.enabled` — enforced in the
   templates via `and`, not just documented.
+- Each component owns its own Service rather than a single chart-wide
+  one: `chromium.debug.service` (`templates/service-debugger.yaml`,
+  rendered only when `chromium.debug.enabled`) and `xpra.service`
+  (`templates/service-xpra.yaml`, rendered only when `xpra.enabled`),
+  each with its own `type`/`port`. This replaced an earlier single
+  top-level `service` block (shared `type`, `debuggingPort`/`xpraPort`)
+  once it became clear the two sidecars could reasonably need different
+  Service types (e.g. one internal `ClusterIP`, one `NodePort`/`LoadBalancer`)
+  — matches the existing per-component `httpRoute` split for the same
+  reason. The HTTPRoutes' `backendRefs` point at
+  `<fullname>-debugger`/`<fullname>-xpra` accordingly.
+- The debug-forwarding sidecar, its image, resources, securityContext,
+  Service, and HTTPRoute all live nested under `chromium.debug` (not a
+  top-level `debugFwd` block as originally structured) — the debugger
+  is fundamentally a facet of exposing chromium's CDP port, not an
+  independent component, so its config belongs inside `chromium` the
+  same way xpra's own Service/httpRoute live inside `xpra`. The
+  `debug-fwd` container name in the StatefulSet is unchanged; only the
+  values.yaml location and all `.Values.chromium.debug.*` template
+  references moved.
 
 ## Progress
 

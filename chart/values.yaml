@@ -41,35 +41,42 @@ chromium:
   resources: {}
   securityContext: {}
 
-  # Gateway API HTTPRoute exposing the CDP debugger endpoint (via
-  # debug-fwd). Only takes effect when debugFwd.enabled is also true.
-  # Disabled/unset by default since this chart is cluster-agnostic until
-  # integrated elsewhere -- set gatewayName/gatewayNamespace and
-  # hostname to wire it up. Kept separate from xpra's own httpRoute
-  # block so each can bind to a different gateway.
-  httpRoute:
+  # Exposes the CDP debugger endpoint outside the pod: a socat sidecar
+  # relaying 0.0.0.0:debuggingPort -> 127.0.0.1:debuggingPort inside the
+  # pod (working around the chromium >=M113 CDP loopback-only
+  # restriction -- see debuggingPort above), plus the Service and
+  # optional HTTPRoute fronting it. Disabled by default -- the debugger
+  # is opt-in per deployment.
+  debug:
     enabled: false
-    gatewayName: ""
-    gatewayNamespace: ""
-    sectionName: https
-    hostname: ""
 
-# debug-fwd: socat sidecar relaying 0.0.0.0:debuggingPort ->
-# 127.0.0.1:debuggingPort inside the pod, working around the chromium
-# >=M113 CDP loopback-only restriction (see chromium.debuggingPort
-# above). Runs in its own container sharing the pod's network namespace.
-# Disabled by default -- the CDP debugging endpoint is opt-in per
-# deployment, same as its httpRoute below.
-debugFwd:
-  enabled: false
+    image:
+      repository: alpine/socat
+      pullPolicy: IfNotPresent
+      tag: ""
 
-  image:
-    repository: alpine/socat
-    pullPolicy: IfNotPresent
-    tag: ""
+    resources: {}
+    securityContext: {}
 
-  resources: {}
-  securityContext: {}
+    # Service exposing the debugging port (via the debug-fwd relay
+    # above). Only takes effect when debug.enabled is also true -- the
+    # port it exposes doesn't exist on the pod otherwise.
+    service:
+      type: ClusterIP
+      port: 9222
+
+    # Gateway API HTTPRoute exposing the CDP debugger endpoint (via
+    # debug-fwd). Only takes effect when debug.enabled is also true.
+    # Disabled/unset by default since this chart is cluster-agnostic
+    # until integrated elsewhere -- set gatewayName/gatewayNamespace and
+    # hostname to wire it up. Kept separate from xpra's own httpRoute
+    # block so each can bind to a different gateway.
+    httpRoute:
+      enabled: false
+      gatewayName: ""
+      gatewayNamespace: ""
+      sectionName: https
+      hostname: ""
 
 # The xpra sidecar. Shares the chromium container's X11 socket
 # (/tmp/.X11-unix, via an emptyDir) and shadows its display, rather than
@@ -101,9 +108,15 @@ xpra:
   resources: {}
   securityContext: {}
 
+  # Service exposing the xpra HTML5/TCP port. Only takes effect when
+  # xpra.enabled is also true.
+  service:
+    type: ClusterIP
+    port: 10000
+
   # Gateway API HTTPRoute exposing the xpra HTML5 UI. Only takes effect
   # when xpra.enabled is also true. Disabled/unset by default -- see
-  # chromium.httpRoute above; kept independent so xpra and the debugger
+  # chromium.debug.httpRoute above; kept independent so xpra and the debugger
   # endpoint can bind to different gateways.
   httpRoute:
     enabled: false
@@ -119,10 +132,3 @@ persistence:
   accessModes:
     - ReadWriteOnce
   size: 8Gi
-
-# ClusterIP Service exposing the debugging port (via the socat relay) and
-# the xpra HTML5/TCP port.
-service:
-  type: ClusterIP
-  debuggingPort: 9222
-  xpraPort: 10000

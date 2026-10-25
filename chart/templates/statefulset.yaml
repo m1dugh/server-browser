@@ -59,14 +59,14 @@ spec:
             {{- end }}
             - name: user-data
               mountPath: /data
-        {{- if .Values.debugFwd.enabled }}
+        {{- if .Values.chromium.debug.enabled }}
         - name: debug-fwd
-          {{- with .Values.debugFwd.securityContext }}
+          {{- with .Values.chromium.debug.securityContext }}
           securityContext:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          image: "{{ .Values.debugFwd.image.repository }}:{{ .Values.debugFwd.image.tag | default "latest" }}"
-          imagePullPolicy: {{ .Values.debugFwd.image.pullPolicy }}
+          image: "{{ .Values.chromium.debug.image.repository }}:{{ .Values.chromium.debug.image.tag | default "latest" }}"
+          imagePullPolicy: {{ .Values.chromium.debug.image.pullPolicy }}
           args:
             - TCP-LISTEN:{{ .Values.chromium.debuggingPort }},fork,reuseaddr
             - TCP:127.0.0.1:{{ .Values.chromium.debuggingPort }}
@@ -74,7 +74,7 @@ spec:
             - name: debug
               containerPort: {{ .Values.chromium.debuggingPort }}
               protocol: TCP
-          {{- with .Values.debugFwd.resources }}
+          {{- with .Values.chromium.debug.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}

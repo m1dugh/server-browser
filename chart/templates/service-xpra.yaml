@@ -1,0 +1,17 @@
+{{- if .Values.xpra.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "server-browser.fullname" . }}-xpra
+  labels:
+    {{- include "server-browser.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.xpra.service.type }}
+  ports:
+    - port: {{ .Values.xpra.service.port }}
+      targetPort: xpra
+      protocol: TCP
+      name: xpra
+  selector:
+    {{- include "server-browser.selectorLabels" . | nindent 4 }}
+{{- end }}
