@@ -10,10 +10,10 @@ persistent browser to drive: something with its own IP, its own cookies/
 session state, and its own debugging interface, that keeps running and
 keeps its state between agent runs instead of spinning a throwaway
 headless browser up and down. A human can also open the same session in
-a normal browser tab to watch or take over at any point — useful during
-bug bounty work when a step needs a human in the loop (solving a
-captcha, approving a login, inspecting something visually) without ever
-needing desktop access to the machine the browser actually runs on.
+a normal browser tab to watch or take over at any point — useful any
+time a step needs a human in the loop (solving a captcha, approving a
+login, inspecting something visually) without ever needing desktop
+access to the machine the browser actually runs on.
 
 Concretely, this chart deploys one browser session that exposes two
 independent things to the outside world:
@@ -102,7 +102,10 @@ status.
 
 ## Status
 
-This is a standalone Helm chart project (`chart/`), developed and
-tested independently of any specific Kubernetes cluster. It is meant to
-be integrated into a real cluster's GitOps/ArgoCD setup later — nothing
-in this repo assumes or hardcodes details of that target cluster.
+This is a standalone Helm chart (`chart/`), meant to be usable by
+anyone on any Kubernetes cluster — nothing in this repo assumes or
+hardcodes details of a specific cluster. Every cluster-specific detail
+(image registries, storage class, Gateway names/hostnames, whether
+persistence or either `HTTPRoute` is enabled, xpra auth, and so on) is
+left to each user to configure through `values.yaml` for their own
+deployment.

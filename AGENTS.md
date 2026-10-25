@@ -3,15 +3,20 @@
 `CLAUDE.md` in this repo is a symlink to this file (`AGENTS.md`) — they are
 the same file, not two separate documents to keep in sync.
 
+User-intended documentation (what this project is, why it exists, how
+the pieces fit together for someone reading the repo rather than working
+on it) belongs in `README.md`, not here. This file (`AGENTS.md`) is for
+agent/implementation context instead: decisions made, why, and current
+progress/status — see the sections below.
+
 A Helm chart (`chart/`) providing a remotely-controllable, persistent
-Chromium browser for bug bounty work: Chrome DevTools Protocol (remote
-debugging) access plus an interactive Xpra-forwarded display of the same
-browser session.
+Chromium browser: Chrome DevTools Protocol (remote debugging) access
+plus an interactive Xpra-forwarded display of the same browser session.
 
 This is a standalone project, developed independently of any specific
-cluster. It is expected to be integrated into another infrastructure
-repo later (as an ArgoCD-deployed chart) — nothing here should assume or
-reference that target cluster's specifics.
+cluster, meant to be usable by anyone on any Kubernetes cluster — nothing
+here should assume or hardcode details of a specific target cluster;
+every cluster-specific detail is left to each user's own `values.yaml`.
 
 ## Architecture
 
@@ -49,8 +54,7 @@ existing Gateway — each block has its own
 `gatewayName`/`gatewayNamespace`/`sectionName`/`hostname`, deliberately
 kept separate (rather than a single shared `httpRoute` block) so the
 debugger and the xpra UI can be bound to two different Gateways (e.g.
-one private, one public) by whoever integrates this chart into a real
-cluster.
+one private, one public) by whoever deploys this chart.
 
 ## Decisions made so far
 
@@ -124,4 +128,3 @@ cluster.
   xpra actually shadows chromium's display and CDP is reachable through
   debug-fwd) — so far only `docker build` has been exercised per image,
   not the full pod wiring (shared X11 socket, readiness probes) together.
-- Integration into any actual cluster (explicitly deferred).
