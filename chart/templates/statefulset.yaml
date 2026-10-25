@@ -26,6 +26,17 @@ spec:
       securityContext:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      initContainers:
+        - name: fix-user-data-permissions
+          image: "{{ .Values.chromium.image.repository }}:{{ .Values.chromium.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.chromium.image.pullPolicy }}
+          command: ["chown", "-R", "chromium:chromium", "/data"]
+          securityContext:
+            runAsUser: 0
+            runAsGroup: 0
+          volumeMounts:
+            - name: user-data
+              mountPath: /data
       containers:
         - name: chromium
           {{- with .Values.chromium.securityContext }}
