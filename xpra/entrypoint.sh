@@ -21,4 +21,5 @@ exec xpra shadow "${DISPLAY}" \
   --bind-ws="${BIND_WS}" \
   --html=on \
   --daemon=no \
-  --pidfile=
+  --pidfile= \
+  --dbus=no
