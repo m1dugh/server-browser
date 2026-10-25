@@ -1,0 +1,146 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "server-browser.fullname" . }}
+  labels:
+    {{- include "server-browser.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "server-browser.fullname" . }}
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "server-browser.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "server-browser.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: chromium
+          {{- with .Values.chromium.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          image: "{{ .Values.chromium.image.repository }}:{{ .Values.chromium.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.chromium.image.pullPolicy }}
+          env:
+            - name: DEBUGGING_PORT
+              value: {{ .Values.chromium.debuggingPort | quote }}
+            - name: DISPLAY_WIDTH
+              value: {{ .Values.chromium.display.width | quote }}
+            - name: DISPLAY_HEIGHT
+              value: {{ .Values.chromium.display.height | quote }}
+            - name: DISPLAY_DEPTH
+              value: {{ .Values.chromium.display.depth | quote }}
+          {{- with .Values.chromium.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          readinessProbe:
+            exec:
+              command: ["test", "-f", "/run/server-browser/ready"]
+            initialDelaySeconds: 1
+            periodSeconds: 5
+          volumeMounts:
+            - name: x11-socket
+              mountPath: /tmp/.X11-unix
+            - name: user-data
+              mountPath: /data
+        - name: debug-fwd
+          {{- with .Values.debugFwd.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          image: "{{ .Values.debugFwd.image.repository }}:{{ .Values.debugFwd.image.tag | default "latest" }}"
+          imagePullPolicy: {{ .Values.debugFwd.image.pullPolicy }}
+          args:
+            - TCP-LISTEN:{{ .Values.chromium.debuggingPort }},fork,reuseaddr
+            - TCP:127.0.0.1:{{ .Values.chromium.debuggingPort }}
+          ports:
+            - name: debug
+              containerPort: {{ .Values.chromium.debuggingPort }}
+              protocol: TCP
+          {{- with .Values.debugFwd.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+        - name: xpra
+          {{- with .Values.xpra.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          image: "{{ .Values.xpra.image.repository }}:{{ .Values.xpra.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.xpra.image.pullPolicy }}
+          env:
+            - name: XPRA_PORT
+              value: {{ .Values.xpra.port | quote }}
+            {{- if .Values.xpra.auth.passwordSecretName }}
+            - name: XPRA_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.xpra.auth.passwordSecretName }}
+                  key: {{ .Values.xpra.auth.passwordSecretKey }}
+            {{- else if .Values.xpra.auth.password }}
+            - name: XPRA_PASSWORD
+              value: {{ .Values.xpra.auth.password | quote }}
+            {{- end }}
+          ports:
+            - name: xpra
+              containerPort: {{ .Values.xpra.port }}
+              protocol: TCP
+          {{- with .Values.xpra.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          readinessProbe:
+            exec:
+              command: ["test", "-f", "/run/server-browser/ready"]
+            initialDelaySeconds: 1
+            periodSeconds: 5
+          volumeMounts:
+            - name: x11-socket
+              mountPath: /tmp/.X11-unix
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      volumes:
+        - name: x11-socket
+          emptyDir: {}
+        {{- if not .Values.persistence.enabled }}
+        - name: user-data
+          emptyDir: {}
+        {{- end }}
+  {{- if .Values.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: user-data
+      spec:
+        accessModes:
+          {{- toYaml .Values.persistence.accessModes | nindent 10 }}
+        {{- with .Values.persistence.storageClassName }}
+        storageClassName: {{ . }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.persistence.size }}
+  {{- end }}

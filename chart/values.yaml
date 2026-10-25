@@ -1,0 +1,119 @@
+# Default values for server-browser.
+
+nameOverride: ""
+fullnameOverride: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext: {}
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# The chromium browser container. No image exists upstream that runs
+# chromium headful on a bare X11 display without also bundling its own
+# VNC/noVNC server (e.g. jlesage/chromium), which would conflict with
+# xpra acting as the display server here. So this image is authored in
+# this chart's own `image/` folder: alpine + chromium (apk) + xvfb, started
+# with --remote-debugging-port=<port> (bound to loopback only -- see
+# below) and nothing else listening on the display.
+chromium:
+  image:
+    repository: ""
+    pullPolicy: IfNotPresent
+    tag: ""
+
+  # Chrome DevTools Protocol (remote debugging) port. Chromium >=M113
+  # forces --remote-debugging-address back to 127.0.0.1 regardless of
+  # what's requested, so this port is never actually bound on all
+  # interfaces by chromium itself -- see socat below for how it's
+  # actually exposed to the rest of the pod/cluster.
+  debuggingPort: 9222
+
+  # Virtual display resolution (Xvfb).
+  display:
+    width: 1920
+    height: 1080
+    depth: 24
+
+  resources: {}
+  securityContext: {}
+
+  # Gateway API HTTPRoute exposing the CDP debugger endpoint (via
+  # debug-fwd). Disabled/unset by default since this chart is
+  # cluster-agnostic until integrated elsewhere -- set gatewayName/
+  # gatewayNamespace and hostname to wire it up. Kept separate from
+  # xpra's own httpRoute block so each can bind to a different gateway.
+  httpRoute:
+    enabled: false
+    gatewayName: ""
+    gatewayNamespace: ""
+    sectionName: https
+    hostname: ""
+
+# debug-fwd: socat sidecar relaying 0.0.0.0:debuggingPort ->
+# 127.0.0.1:debuggingPort inside the pod, working around the chromium
+# >=M113 CDP loopback-only restriction (see chromium.debuggingPort
+# above). Runs in its own container sharing the pod's network namespace.
+debugFwd:
+  image:
+    repository: alpine/socat
+    pullPolicy: IfNotPresent
+    tag: ""
+
+  resources: {}
+  securityContext: {}
+
+# The xpra sidecar. Shares the chromium container's X11 socket
+# (/tmp/.X11-unix, via an emptyDir) and shadows its display, rather than
+# starting/owning an application itself.
+xpra:
+  image:
+    repository: ""
+    pullPolicy: IfNotPresent
+    tag: ""
+
+  # Port xpra's HTML5/TCP client listens on.
+  port: 10000
+
+  # Password protecting the xpra HTML5/websocket listener. When neither
+  # is set, xpra runs passwordless (auth=allow). `password` sets it
+  # directly (plaintext, rendered into the StatefulSet/values -- fine for
+  # local testing, not recommended for anything checked into git).
+  # `passwordSecretName`/`passwordSecretKey` instead point at a Secret
+  # (e.g. materialized by an ExternalSecret); takes precedence over
+  # `password` when both are set.
+  auth:
+    password: ""
+    passwordSecretName: ""
+    passwordSecretKey: password
+
+  resources: {}
+  securityContext: {}
+
+  # Gateway API HTTPRoute exposing the xpra HTML5 UI. Disabled/unset by
+  # default -- see chromium.httpRoute above; kept independent so xpra and
+  # the debugger endpoint can bind to different gateways.
+  httpRoute:
+    enabled: false
+    gatewayName: ""
+    gatewayNamespace: ""
+    sectionName: https
+    hostname: ""
+
+# Chromium's --user-data-dir (profile, cache, cookies, extensions, ...).
+persistence:
+  enabled: false
+  storageClassName: ""
+  accessModes:
+    - ReadWriteOnce
+  size: 8Gi
+
+# ClusterIP Service exposing the debugging port (via the socat relay) and
+# the xpra HTML5/TCP port.
+service:
+  type: ClusterIP
+  debuggingPort: 9222
+  xpraPort: 10000

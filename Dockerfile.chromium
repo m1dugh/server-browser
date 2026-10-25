@@ -1,0 +1,37 @@
+# Chromium running headful against a virtual X11 display (Xvfb), with the
+# Chrome DevTools Protocol (remote debugging) enabled. No bundled VNC/
+# display server here on purpose -- xpra (a separate sidecar container)
+# owns the display, attaching to the X11 socket this container creates
+# under /tmp/.X11-unix.
+#
+FROM alpine:3.24
+
+# Pinned to the version available in alpine 3.24's community repo at
+# the time this was written. Override with a different apk version
+# string to pin to another release.
+ARG CHROMIUM_VERSION="155.0.8059.84-r0"
+
+RUN apk add --no-cache \
+      xvfb \
+      dbus \
+      ttf-freefont \
+      chromium=${CHROMIUM_VERSION}
+
+RUN addgroup -S chromium && adduser -S chromium -G chromium \
+    && mkdir -p /data /run/server-browser \
+    && chown -R chromium:chromium /data /run/server-browser
+
+COPY entrypoint.chromium.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+USER chromium
+
+ENV DEBUGGING_PORT=9222 \
+    DISPLAY_WIDTH=1920 \
+    DISPLAY_HEIGHT=1080 \
+    DISPLAY_DEPTH=24 \
+    DISPLAY=:1
+
+VOLUME ["/data"]
+
+ENTRYPOINT ["/entrypoint.sh"]

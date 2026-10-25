@@ -1,0 +1,24 @@
+# xpra shadowing an existing X11 display (created by the chromium
+# container, shared via /tmp/.X11-unix) and serving it over its built-in
+# HTML5 client. Does not start/own any application itself.
+#
+# The HTML5 client has been a hard dependency of the main xpra package
+# since v5.1.5, so no separate xpra-html5/xpra-webclient package is
+# needed.
+FROM alpine:3.24
+
+# Pinned to the version available in alpine 3.24's community repo at
+# the time this was written. Override with a different apk version
+# string to pin to another release.
+ARG XPRA_VERSION="6.4.3-r0"
+
+RUN apk add --no-cache \
+      xpra=${XPRA_VERSION}
+
+COPY entrypoint.xpra.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENV XPRA_PORT=10000 \
+    DISPLAY=:1
+
+ENTRYPOINT ["/entrypoint.sh"]
