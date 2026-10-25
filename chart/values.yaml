@@ -21,9 +21,9 @@ affinity: {}
 # below) and nothing else listening on the display.
 chromium:
   image:
-    repository: ""
+    repository: ghcr.io/m1dugh/server-browser/chromium
     pullPolicy: IfNotPresent
-    tag: ""
+    tag: latest
 
   # Chrome DevTools Protocol (remote debugging) port. Chromium >=M113
   # forces --remote-debugging-address back to 127.0.0.1 regardless of
@@ -71,9 +71,9 @@ debugFwd:
 # starting/owning an application itself.
 xpra:
   image:
-    repository: ""
+    repository: ghcr.io/m1dugh/server-browser/xpra
     pullPolicy: IfNotPresent
-    tag: ""
+    tag: latest
 
   # Port xpra's HTML5/TCP client listens on.
   port: 10000
