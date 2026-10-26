@@ -9,9 +9,9 @@ done
 if [ -n "${XPRA_PASSWORD:-}" ]; then
   PASSWORD_FILE="$(mktemp)"
   printf '%s' "${XPRA_PASSWORD}" > "${PASSWORD_FILE}"
-  BIND_WS="0.0.0.0:${XPRA_PORT},auth=file,filename=${PASSWORD_FILE}"
+  BIND_WS="0.0.0.0:${XPRA_PORT},auth=file,filename=${PASSWORD_FILE},client-username=no,verify-username=no"
 else
-  BIND_WS="0.0.0.0:${XPRA_PORT},auth=allow"
+  BIND_WS="0.0.0.0:${XPRA_PORT},auth=allow,client-username=no,verify-username=no"
 fi
 
 mkdir -p /run/server-browser
@@ -23,4 +23,5 @@ exec xpra shadow "${DISPLAY}" \
   --html=on \
   --daemon=no \
   --pidfile= \
-  --dbus=no
+  --dbus=no \
+  --sharing=yes
