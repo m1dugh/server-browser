@@ -11,12 +11,42 @@ progress/status — see the sections below.
 
 A Helm chart (`chart/`) providing a remotely-controllable, persistent
 Chromium browser: Chrome DevTools Protocol (remote debugging) access
-plus an interactive Xpra-forwarded display of the same browser session.
+plus an interactive KasmVNC-forwarded display of the same browser
+session.
 
 This is a standalone project, developed independently of any specific
 cluster, meant to be usable by anyone on any Kubernetes cluster — nothing
 here should assume or hardcode details of a specific target cluster;
 every cluster-specific detail is left to each user's own `values.yaml`.
+
+## Testing methodology
+
+This project is meant to live in Kubernetes: every multi-container
+piece of the architecture ultimately runs as sibling containers in a
+single pod, sharing one network namespace (hence one hostname, one
+loopback interface) — not as independent hosts. When verifying
+inter-container behavior locally with disposable Docker containers
+(the default way of checking things hands-on before wiring them into
+the chart), reproduce that condition as closely as possible rather than
+defaulting to Docker's own per-container network isolation: start the
+containers on a shared network namespace (e.g. `docker run --network
+container:<other>`), not merely a shared user-defined bridge network.
+
+This matters concretely, not just stylistically — it already produced
+a wrong conclusion once: X11 authority (`.Xauthority`) lookups are
+keyed by the connecting client's own hostname, so a naive Docker test
+using separate bridge-networked containers (each with Docker's default
+per-container hostname) showed a real-looking authentication failure
+and led to designing a whole cookie-extraction/`xauth add` mechanism to
+work around it. Re-testing with the containers sharing a network
+namespace (matching how they'll actually run, as sibling containers in
+one pod) showed the plain, no-extraction approach — kasmvnc writing its
+`.Xauthority` to a shared volume via `XAUTHORITY=<path>`, chromium just
+pointing its own `XAUTHORITY` at that same path read-only — works
+without any extra logic at all, because every container in a pod
+shares the same hostname. The simpler design was only discovered by
+correcting the test's network conditions, not by reasoning about X11
+internals further.
 
 ## Architecture
 
@@ -185,20 +215,17 @@ one private, one public) by whoever deploys this chart.
 ## Not yet started
 
 - Publishing the built `chromium`/`kasmvnc` images somewhere
-  `values.yaml`'s `image.repository` can actually reference.
-- Wiring `kasmvnc/` into `chart/templates/` and `values.yaml`, replacing
-  the current `xpra` container/Service/HTTPRoute block there — the
-  `xpra/` source folder and its CI workflow have already been removed
-  (xpra is no longer in use at all, see the section below for why), but
-  `chart/templates/statefulset.yaml`, `service-xpra.yaml`,
-  `httproute-xpra.yaml`, and the `xpra` block in `values.yaml` still
-  reference it as of this writing — the chart itself hasn't been
-  updated yet, this is the next concrete step.
-- End-to-end runtime verification (deploying the chart with the new
-  KasmVNC-based display layer, confirming the shared X11 socket/
-  Xauthority wiring and CDP-through-debug-fwd all work together in an
-  actual cluster) — so far only verified via disposable local Docker
-  containers, not the full pod wiring together.
+  `values.yaml`'s `image.repository` can actually reference (the
+  `kasmvnc` image is already published via its own CI workflow;
+  `chromium`'s own publishing status is unrelated/separate).
+- End-to-end runtime verification in an actual Kubernetes cluster
+  (deploying the chart with the new KasmVNC-based display layer,
+  confirming the init-container permission fix, the shared X11
+  socket/Xauthority wiring, and CDP-through-debug-fwd all work together
+  under real pod scheduling) — so far only verified via disposable
+  local Docker containers with the network namespace deliberately
+  shared between them to approximate pod conditions (see "Testing
+  methodology" above), not an actual cluster.
 
 ## Display/remote-access layer: moving off xpra (in progress, architecture may still evolve)
 
@@ -395,12 +422,44 @@ image is built against.
 image pipelines (same QEMU/buildx/multi-arch setup) with this tag
 derivation as its one addition.
 
-This section will be revised/replaced once the architecture is
-actually wired into `chart/templates/` — treat everything above as the
-current best understanding, not a final design. Still open: the shared
-X11 socket volume's permissions (to be handled by an init container in
-the real chart, not yet implemented/verified in Kubernetes — only
-reproduced via manual `chmod` in local Docker testing) and scripting
-the per-container Xauthority cookie generation into
-`chromium/entrypoint.sh` (currently only proven via a manual `xauth
-add` step in testing, not yet written into the entrypoint itself).
+**Chart wiring — done.** `chart/templates/statefulset.yaml` now has a
+`kasmvnc` container (parallel to how `xpra` used to be wired, gated the
+same way on `.Values.kasmvnc.enabled`), a second init container
+(`fix-x11-socket-permissions`, `chmod 1777` on the shared `x11-socket`
+emptyDir, same pattern as the existing `fix-user-data-permissions` one
+for the PVC) running before the main containers, and a new `x11-auth`
+emptyDir shared between `chromium` and `kasmvnc` for the Xauthority
+file. `chart/templates/service-kasmvnc.yaml`/`httproute-kasmvnc.yaml`
+replace the old xpra-named files (git mv'd, not just recreated).
+`chromium.display.{width,height,depth}` now also drives kasmvnc's own
+`VNC_RESOLUTION`/`VNC_COL_DEPTH` env vars, so the two stay in sync
+without a second set of values.
+
+**Final Xauthority mechanism — simpler than first designed, and only
+discovered by fixing the local test's network conditions** (see
+"Testing methodology" above): kasmvnc is started with
+`XAUTHORITY=/shared/x11-auth/Xauthority` (a path on the shared
+`x11-auth` emptyDir); chromium just points its own `XAUTHORITY` at that
+same shared file, mounted read-only, no cookie extraction or local
+`xauth add` step needed, since every container in a pod shares the same
+hostname and X11 authority lookups are hostname-keyed.
+
+One wrinkle that mattered and is worth remembering: kasmvnc's
+`.Xauthority` is always written `0600`, owned by its own container's
+uid — unreadable by chromium's own unprivileged `chromium` user as-is.
+`chromium/Dockerfile` no longer has a baked-in `USER chromium` for this
+reason; the entrypoint now starts as root (when `EXTERNAL_DISPLAY=1`,
+set by the chart whenever `kasmvnc.enabled`), copies the shared
+Xauthority file to a `chromium`-owned path, then drops to the
+unprivileged `chromium` user via `su-exec` immediately before `exec`ing
+chromium itself — in both the kasmvnc and plain-Xvfb code paths, so
+chromium itself never actually runs as root either way. `--start-
+maximized` (added unconditionally when `EXTERNAL_DISPLAY=1`) is what
+actually makes chromium fill the display edge-to-edge, confirmed
+hands-on (`xwininfo` showed the window within 1px of the full display
+geometry) — this, combined with the panel suppression described above,
+is the full fix for the earlier fullscreen/window-manager question.
+
+Still open: actual end-to-end verification in a real Kubernetes
+cluster (see "Not yet started" above) — everything in this section has
+been verified hands-on in disposable Docker containers only.

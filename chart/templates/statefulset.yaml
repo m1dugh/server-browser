@@ -37,6 +37,18 @@ spec:
           volumeMounts:
             - name: user-data
               mountPath: /data
+        {{- if .Values.kasmvnc.enabled }}
+        - name: fix-x11-socket-permissions
+          image: "{{ .Values.chromium.image.repository }}:{{ .Values.chromium.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.chromium.image.pullPolicy }}
+          command: ["chmod", "1777", "/tmp/.X11-unix"]
+          securityContext:
+            runAsUser: 0
+            runAsGroup: 0
+          volumeMounts:
+            - name: x11-socket
+              mountPath: /tmp/.X11-unix
+        {{- end }}
       containers:
         - name: chromium
           {{- with .Values.chromium.securityContext }}
@@ -54,6 +66,10 @@ spec:
               value: {{ .Values.chromium.display.height | quote }}
             - name: DISPLAY_DEPTH
               value: {{ .Values.chromium.display.depth | quote }}
+            {{- if .Values.kasmvnc.enabled }}
+            - name: EXTERNAL_DISPLAY
+              value: "1"
+            {{- end }}
           {{- with .Values.chromium.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
@@ -64,9 +80,12 @@ spec:
             initialDelaySeconds: 1
             periodSeconds: 5
           volumeMounts:
-            {{- if .Values.xpra.enabled }}
+            {{- if .Values.kasmvnc.enabled }}
             - name: x11-socket
               mountPath: /tmp/.X11-unix
+            - name: x11-auth
+              mountPath: /run/server-browser/x11-auth
+              readOnly: true
             {{- end }}
             - name: user-data
               mountPath: /data
@@ -90,43 +109,51 @@ spec:
             {{- toYaml . | nindent 12 }}
           {{- end }}
         {{- end }}
-        {{- if .Values.xpra.enabled }}
-        - name: xpra
-          {{- with .Values.xpra.securityContext }}
+        {{- if .Values.kasmvnc.enabled }}
+        - name: kasmvnc
+          {{- with .Values.kasmvnc.securityContext }}
           securityContext:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          image: "{{ .Values.xpra.image.repository }}:{{ .Values.xpra.image.tag | default .Chart.AppVersion }}"
-          imagePullPolicy: {{ .Values.xpra.image.pullPolicy }}
+          image: "{{ .Values.kasmvnc.image.repository }}:{{ .Values.kasmvnc.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.kasmvnc.image.pullPolicy }}
           env:
-            - name: XPRA_PORT
-              value: {{ .Values.xpra.port | quote }}
-            {{- if .Values.xpra.auth.passwordSecretName }}
-            - name: XPRA_PASSWORD
+            - name: NO_VNC_PORT
+              value: {{ .Values.kasmvnc.port | quote }}
+            - name: VNC_RESOLUTION
+              value: "{{ .Values.chromium.display.width }}x{{ .Values.chromium.display.height }}"
+            - name: VNC_COL_DEPTH
+              value: {{ .Values.chromium.display.depth | quote }}
+            - name: XAUTHORITY
+              value: /shared/x11-auth/Xauthority
+            {{- if .Values.kasmvnc.auth.passwordSecretName }}
+            - name: VNC_PW
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.xpra.auth.passwordSecretName }}
-                  key: {{ .Values.xpra.auth.passwordSecretKey }}
-            {{- else if .Values.xpra.auth.password }}
-            - name: XPRA_PASSWORD
-              value: {{ .Values.xpra.auth.password | quote }}
+                  name: {{ .Values.kasmvnc.auth.passwordSecretName }}
+                  key: {{ .Values.kasmvnc.auth.passwordSecretKey }}
+            {{- else if .Values.kasmvnc.auth.password }}
+            - name: VNC_PW
+              value: {{ .Values.kasmvnc.auth.password | quote }}
             {{- end }}
           ports:
-            - name: xpra
-              containerPort: {{ .Values.xpra.port }}
+            - name: kasmvnc
+              containerPort: {{ .Values.kasmvnc.port }}
               protocol: TCP
-          {{- with .Values.xpra.resources }}
+          {{- with .Values.kasmvnc.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
           readinessProbe:
-            exec:
-              command: ["test", "-f", "/run/server-browser/ready"]
+            tcpSocket:
+              port: kasmvnc
             initialDelaySeconds: 1
             periodSeconds: 5
           volumeMounts:
             - name: x11-socket
               mountPath: /tmp/.X11-unix
+            - name: x11-auth
+              mountPath: /shared/x11-auth
         {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
@@ -141,8 +168,10 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       volumes:
-        {{- if .Values.xpra.enabled }}
+        {{- if .Values.kasmvnc.enabled }}
         - name: x11-socket
+          emptyDir: {}
+        - name: x11-auth
           emptyDir: {}
         {{- end }}
         {{- if not .Values.persistence.enabled }}

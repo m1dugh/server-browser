@@ -1,17 +1,17 @@
-{{- if .Values.xpra.enabled }}
+{{- if .Values.kasmvnc.enabled }}
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "server-browser.fullname" . }}-xpra
+  name: {{ include "server-browser.fullname" . }}-kasmvnc
   labels:
     {{- include "server-browser.labels" . | nindent 4 }}
 spec:
-  type: {{ .Values.xpra.service.type }}
+  type: {{ .Values.kasmvnc.service.type }}
   ports:
-    - port: {{ .Values.xpra.service.port }}
-      targetPort: xpra
+    - port: {{ .Values.kasmvnc.service.port }}
+      targetPort: kasmvnc
       protocol: TCP
-      name: xpra
+      name: kasmvnc
   selector:
     {{- include "server-browser.selectorLabels" . | nindent 4 }}
 {{- end }}

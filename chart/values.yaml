@@ -15,10 +15,13 @@ affinity: {}
 # The chromium browser container. No image exists upstream that runs
 # chromium headful on a bare X11 display without also bundling its own
 # VNC/noVNC server (e.g. jlesage/chromium), which would conflict with
-# xpra acting as the display server here. So this image is authored in
-# this chart's own `image/` folder: alpine + chromium (apk) + xvfb, started
-# with --remote-debugging-port=<port> (bound to loopback only -- see
-# below) and nothing else listening on the display.
+# kasmvnc acting as the display server here. So this image is authored
+# in this chart's own `chromium/` folder: alpine + chromium (apk),
+# connecting as a plain X11 client to the display kasmvnc owns (see
+# kasmvnc below) -- or, when kasmvnc is disabled, to its own Xvfb
+# instead -- started with --remote-debugging-port=<port> (bound to
+# loopback only -- see below) and nothing else listening on the
+# display.
 chromium:
   image:
     repository: ghcr.io/m1dugh/server-browser/chromium
@@ -69,7 +72,7 @@ chromium:
     # debug-fwd). Only takes effect when debug.enabled is also true.
     # Disabled/unset by default since this chart is cluster-agnostic
     # until integrated elsewhere -- set gatewayName/gatewayNamespace and
-    # hostname to wire it up. Kept separate from xpra's own httpRoute
+    # hostname to wire it up. Kept separate from kasmvnc's own httpRoute
     # block so each can bind to a different gateway.
     httpRoute:
       enabled: false
@@ -78,28 +81,34 @@ chromium:
       sectionName: https
       hostname: ""
 
-# The xpra sidecar. Shares the chromium container's X11 socket
-# (/tmp/.X11-unix, via an emptyDir) and shadows its display, rather than
-# starting/owning an application itself. Disabled by default -- enable
-# it to get an interactive display of the chromium session.
-xpra:
+# The kasmvnc sidecar. Owns the pod's X11 display (KasmVNC's own Xvnc,
+# not Xvfb) rather than shadowing/attaching to one started elsewhere --
+# the chromium container connects into THIS display as a plain X11
+# client, sharing the X11 socket (/tmp/.X11-unix, via an emptyDir) the
+# other way around from how the old xpra sidecar worked. Disabled by
+# default -- enable it to get an interactive display of the chromium
+# session.
+kasmvnc:
   enabled: false
 
   image:
-    repository: ghcr.io/m1dugh/server-browser/xpra
+    repository: ghcr.io/m1dugh/server-browser/kasmvnc
     pullPolicy: IfNotPresent
     tag: latest
 
-  # Port xpra's HTML5/TCP client listens on.
-  port: 10000
+  # Port KasmVNC's HTML5/websocket client listens on (served over
+  # HTTPS -- KasmVNC only supports TLS-terminated websockets, hence
+  # httpRoute below needing an HTTPS listener/gateway).
+  port: 6901
 
-  # Password protecting the xpra HTML5/websocket listener. When neither
-  # is set, xpra runs passwordless (auth=allow). `password` sets it
-  # directly (plaintext, rendered into the StatefulSet/values -- fine for
-  # local testing, not recommended for anything checked into git).
-  # `passwordSecretName`/`passwordSecretKey` instead point at a Secret
-  # (e.g. materialized by an ExternalSecret); takes precedence over
-  # `password` when both are set.
+  # Password protecting the KasmVNC HTML5/websocket listener. `password`
+  # sets it directly (plaintext, rendered into the StatefulSet/values --
+  # fine for local testing, not recommended for anything checked into
+  # git). `passwordSecretName`/`passwordSecretKey` instead point at a
+  # Secret (e.g. materialized by an ExternalSecret); takes precedence
+  # over `password` when both are set. Unlike xpra, KasmVNC has no
+  # documented passwordless mode -- when neither is set here, the
+  # image's own baked-in default password is used instead.
   auth:
     password: ""
     passwordSecretName: ""
@@ -108,16 +117,16 @@ xpra:
   resources: {}
   securityContext: {}
 
-  # Service exposing the xpra HTML5/TCP port. Only takes effect when
-  # xpra.enabled is also true.
+  # Service exposing the KasmVNC HTML5/websocket port. Only takes
+  # effect when kasmvnc.enabled is also true.
   service:
     type: ClusterIP
-    port: 10000
+    port: 6901
 
-  # Gateway API HTTPRoute exposing the xpra HTML5 UI. Only takes effect
-  # when xpra.enabled is also true. Disabled/unset by default -- see
-  # chromium.debug.httpRoute above; kept independent so xpra and the debugger
-  # endpoint can bind to different gateways.
+  # Gateway API HTTPRoute exposing the KasmVNC HTML5 UI. Only takes
+  # effect when kasmvnc.enabled is also true. Disabled/unset by default
+  # -- see chromium.debug.httpRoute above; kept independent so kasmvnc
+  # and the debugger endpoint can bind to different gateways.
   httpRoute:
     enabled: false
     gatewayName: ""
