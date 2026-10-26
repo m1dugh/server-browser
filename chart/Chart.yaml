@@ -1,6 +1,6 @@
 apiVersion: v2
 name: server-browser
-description: Persistent, remotely-controllable Chromium browser with CDP and Xpra access
+description: Persistent, remotely-controllable Chromium browser with CDP and KasmVNC access
 type: application
 version: 0.1.4
 appVersion: "0.1.4"
