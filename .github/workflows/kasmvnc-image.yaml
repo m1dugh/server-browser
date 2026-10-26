@@ -1,18 +1,18 @@
-name: Build and push xpra image
+name: Build and push kasmvnc image
 
 on:
   push:
     branches: [main]
     paths:
-      - xpra/**
-      - .github/workflows/xpra-image.yaml
+      - kasmvnc/**
+      - .github/workflows/kasmvnc-image.yaml
 
 permissions:
   contents: read
   packages: write
 
 env:
-  IMAGE: ghcr.io/${{ github.repository }}/xpra
+  IMAGE: ghcr.io/${{ github.repository }}/kasmvnc
 
 jobs:
   build-and-push:
@@ -21,9 +21,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Read xpra version
+      - name: Read kasmvnc version
         id: version
-        run: echo "version=$(cat xpra/version.txt)" >> "$GITHUB_OUTPUT"
+        run: |
+          KASM_VERSION="$(cat kasmvnc/version.txt)"
+          ALPINE_CODE="$(sed -n 's/^FROM kasmweb\/core-alpine-\([0-9]\{3\}\):\${BASE_TAG}$/\1/p' kasmvnc/Dockerfile)"
+          ALPINE_VERSION="${ALPINE_CODE:0:1}.${ALPINE_CODE:1:2}"
+          echo "kasm_version=${KASM_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${KASM_VERSION}-alpine${ALPINE_VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Log in to ghcr.io
         uses: docker/login-action@v4
@@ -41,14 +46,14 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          context: xpra
-          file: xpra/Dockerfile
+          context: kasmvnc
+          file: kasmvnc/Dockerfile
           platforms: linux/amd64,linux/arm64
           build-args: |
-            XPRA_VERSION=${{ steps.version.outputs.version }}
+            BASE_TAG=${{ steps.version.outputs.kasm_version }}
           push: true
           tags: |
-            ${{ env.IMAGE }}:${{ steps.version.outputs.version }}
+            ${{ env.IMAGE }}:${{ steps.version.outputs.tag }}
             ${{ env.IMAGE }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
