@@ -45,15 +45,14 @@ chromium:
 
   resources: {}
 
-  # CAP_SYS_RESOURCE lets chromium lower its renderers' oom_score_adj (it
-  # logs "Failed to adjust OOM score of renderer ... Permission denied" on
-  # every tab switch otherwise). The image entrypoint carries just this one
-  # capability across its drop to the unprivileged chromium user. Override
-  # with `{}` to run without it; the entrypoint falls back transparently.
-  securityContext:
-    capabilities:
-      add:
-        - SYS_RESOURCE
+  # No extra capabilities are granted by default. CAP_SYS_RESOURCE would
+  # let chromium lower its renderers' oom_score_adj (it logs "Failed to
+  # adjust OOM score of renderer ... Permission denied" on tab switches
+  # otherwise; the image entrypoint carries it across the drop to the
+  # unprivileged chromium user and falls back transparently without it),
+  # but adding capabilities requires the namespace's Pod Security level to
+  # allow them: `baseline` rejects SYS_RESOURCE.
+  securityContext: {}
 
   # Exposes the CDP debugger endpoint outside the pod through the nginx
   # proxy (see `nginx` below), plus the Service and optional HTTPRoute
