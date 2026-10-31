@@ -1,0 +1,104 @@
+{{- if include "server-browser.nginxEnabled" . }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "server-browser.fullname" . }}-nginx
+  labels:
+    {{- include "server-browser.labels" . | nindent 4 }}
+data:
+  nginx.conf: |
+    worker_processes auto;
+    pid /tmp/nginx.pid;
+    error_log /dev/stderr warn;
+
+    events {
+      worker_connections 1024;
+    }
+
+    http {
+      access_log off;
+
+      client_body_temp_path /tmp/client_temp;
+      proxy_temp_path       /tmp/proxy_temp;
+      fastcgi_temp_path     /tmp/fastcgi_temp;
+      uwsgi_temp_path       /tmp/uwsgi_temp;
+      scgi_temp_path        /tmp/scgi_temp;
+
+      # Streaming tuning: no gzip, no sendfile/tcp_nopush batching, no
+      # Nagle -- frames go out as soon as they are produced.
+      gzip off;
+      sendfile off;
+      tcp_nopush off;
+      tcp_nodelay on;
+
+      map $http_upgrade $connection_upgrade {
+        default upgrade;
+        ""      close;
+      }
+
+      # TLS is terminated at the gateway in front of the pod; this is the
+      # scheme the client actually used.
+      map $http_x_forwarded_proto $cdp_ws_scheme {
+        https   wss;
+        default ws;
+      }
+      map $http_x_forwarded_proto $cdp_ws_param {
+        https   wss;
+        default ws;
+      }
+{{- if .Values.kasmvnc.enabled }}
+
+      # KasmVNC HTML5 client. The internal basic-auth credential is injected
+      # on every request (websocket upgrades included) so users never
+      # authenticate against KasmVNC itself.
+      server {
+        listen {{ .Values.nginx.kasmvncPort }};
+
+        location / {
+          proxy_pass http://127.0.0.1:{{ .Values.kasmvnc.port }};
+          proxy_http_version 1.1;
+          proxy_set_header Host $http_host;
+          proxy_set_header Authorization "Basic {{ printf "%s:%s" (include "server-browser.kasmvncUser" .) (include "server-browser.kasmvncPassword" .) | b64enc }}";
+          proxy_set_header Upgrade $http_upgrade;
+          proxy_set_header Connection $connection_upgrade;
+
+          proxy_buffering off;
+          proxy_request_buffering off;
+          proxy_read_timeout 1d;
+          proxy_send_timeout 1d;
+          client_max_body_size 0;
+        }
+      }
+{{- end }}
+{{- if .Values.chromium.debug.enabled }}
+
+      # Chrome DevTools Protocol. Chromium only accepts a Host header that is
+      # an IP or localhost, and builds the URLs in /json/* responses from the
+      # Host it received -- so talk to it as localhost and rewrite those URLs
+      # to the external host the client used.
+      server {
+        listen {{ .Values.nginx.debugPort }};
+
+        location / {
+          proxy_pass http://127.0.0.1:{{ .Values.chromium.debuggingPort }};
+          proxy_http_version 1.1;
+          proxy_set_header Host localhost:{{ .Values.chromium.debuggingPort }};
+          proxy_set_header Upgrade $http_upgrade;
+          proxy_set_header Connection $connection_upgrade;
+          # sub_filter cannot rewrite compressed bodies.
+          proxy_set_header Accept-Encoding "";
+
+          proxy_buffering off;
+          proxy_request_buffering off;
+          proxy_read_timeout 1d;
+          proxy_send_timeout 1d;
+
+          sub_filter_once off;
+          sub_filter_types application/json;
+          sub_filter 'ws://localhost:{{ .Values.chromium.debuggingPort }}' '$cdp_ws_scheme://$http_host';
+          sub_filter 'ws=localhost:{{ .Values.chromium.debuggingPort }}' '$cdp_ws_param=$http_host';
+        }
+      }
+{{- end }}
+    }
+{{- end }}

@@ -60,45 +60,70 @@ internals further.
 ## Architecture
 
 A single pod (StatefulSet, 1 replica — the browser's profile and X
-display session are stateful/singleton by nature) with three containers:
+display session are stateful/singleton by nature) with up to three
+containers:
 
 1. **`chromium`** — custom image (Alpine + `chromium` apk package +
    Xvfb). Runs chromium headful against a virtual X display, with
    `--remote-debugging-port=<port>`. No bundled VNC/display server is
    used here (ruled out upstream images like `jlesage/chromium` for this
    reason — they bundle their own noVNC/VNC, which would conflict with
-   Xpra owning the display).
-2. **`debug-fwd`** — `alpine/socat` (upstream image, no modification
-   needed). Chromium >=M113 forces `--remote-debugging-address` back to
-   `127.0.0.1` regardless of what's requested, so the CDP port is never
-   actually reachable from outside the container as chromium binds it.
-   This container relays `0.0.0.0:<relayPort> -> 127.0.0.1:<debuggingPort>`
-   inside the pod's network namespace, making the port reachable via the
-   Service (whose `targetPort` is the relay port). `relayPort` (9223) must
-   differ from `debuggingPort`: a relay listening on the same port can
-   take chromium's loopback bind depending on start order, after which
-   its `127.0.0.1` backend resolves to itself and loops. The debugger
-   `HTTPRoute` also rewrites the Host header to `localhost`, since
-   chromium rejects DevTools requests with any other hostname.
-3. **`xpra`** — custom image (no official Xpra Docker image exists
-   upstream; it's only packaged via apt/dnf). Shadows/attaches to the
-   chromium container's existing X display (`xpra shadow` /
-   `--use-display`) rather than starting its own application — the two
-   containers share the X11 socket (`/tmp/.X11-unix`) via an `emptyDir`
-   volume. Serves Xpra's HTML5/TCP client.
+   the display server owning the display).
+2. **`kasmvnc`** — custom image layered on Kasm's Alpine core image. Owns
+   the X11 display (`Xvnc`), shared with `chromium` through the
+   `/tmp/.X11-unix` and Xauthority `emptyDir`s. It is started with
+   `VNCOPTIONS="-sslOnly=0 -interface 127.0.0.1"` (appended after the
+   flags Kasm's `vnc_startup.sh` hard-codes, so they win): plain HTTP/WS,
+   bound to the pod's loopback only — never reachable except through
+   `nginx`. KasmVNC has no passwordless mode, so the chart uses one
+   fixed INTERNAL credential (`kasm_user` + a constant in
+   `templates/_helpers.tpl`) set as `VNC_PW` and injected by nginx; it is
+   deliberately not configurable and there is no `kasmvnc.auth` value.
+   If authentication is ever needed it belongs in nginx.
+3. **`nginx`** — one `nginxinc/nginx-unprivileged` proxy (pinned tag,
+   plain HTTP, no TLS — TLS is terminated at the gateway) fronting both
+   other containers, rendered when `kasmvnc.enabled` or
+   `chromium.debug.enabled`. Its config is a chart-generated ConfigMap
+   (`<fullname>-nginx`, a `checksum/nginx-config` pod annotation rolls the
+   pod on change) with up to two server blocks on two distinct ports
+   (`nginx.kasmvncPort` 8080, `nginx.debugPort` 9223):
+   - **kasmvnc block:** proxies to `127.0.0.1:<kasmvnc.port>` and sets the
+     basic-auth `Authorization` header on every request, websocket
+     upgrades included, so users never authenticate.
+   - **debugger block:** proxies to `127.0.0.1:<chromium.debuggingPort>`.
+     Chromium >=M113 binds CDP on loopback only and rejects any `Host`
+     that isn't an IP or `localhost`, so nginx sends `Host:
+     localhost:<port>`, and rewrites the URLs chromium builds from it in
+     `/json/*` responses (`webSocketDebuggerUrl`, `devtoolsFrontendUrl`'s
+     `ws=` param) to the host the client used (`$http_host`), with
+     `wss` when `X-Forwarded-Proto` is `https`. Websocket upgrades pass
+     through. `nginx.debugPort` MUST differ from `chromium.debuggingPort`:
+     an earlier socat sidecar listening on `0.0.0.0:<same port>` stole
+     chromium's loopback bind depending on start order, after which its
+     `127.0.0.1` backend resolved to itself and spun the CPU in a loop.
+   - Both blocks run with buffering off (`proxy_buffering off`,
+     `proxy_request_buffering off`, `tcp_nodelay on`, `tcp_nopush off`,
+     no gzip, 1-day read/send timeouts) so the VNC stream and CDP
+     websockets are as smooth as possible.
+
+Because KasmVNC is loopback-bound, its readinessProbe is an exec `curl`
+against `127.0.0.1` (a kubelet `tcpSocket` probe targets the pod IP and
+would fail). KasmVNC's auxiliary servers (audio/upload/gamepad, ports
+49xx, authenticated with the same internal credential) still listen on
+all interfaces but are not exposed by any Service.
 
 Persistence: a PVC backing chromium's `--user-data-dir` (profile, cache,
 cookies, extensions), mounted only into the `chromium` container.
 
-A dedicated ClusterIP Service exposes the CDP port (via `debug-fwd`) and
-another exposes the Xpra port. Two optional Gateway API `HTTPRoute`s
-(disabled by default, one under `chromium.debug.httpRoute` for the
-debugger endpoint, one under `xpra.httpRoute` for the xpra UI) can front
-each service through an existing Gateway — each block has its own
-`gatewayName`/`gatewayNamespace`/`sectionName`/`hostname`, deliberately
-kept separate (rather than a single shared `httpRoute` block) so the
-debugger and the xpra UI can be bound to two different Gateways (e.g.
-one private, one public) by whoever deploys this chart.
+Two ClusterIP Services (`<fullname>-debugger`, `<fullname>-kasmvnc`) keep
+their service ports from values and target nginx's named container ports
+(`debug`, `kasmvnc`). Two optional Gateway API `HTTPRoute`s (disabled by
+default, one under `chromium.debug.httpRoute`, one under
+`kasmvnc.httpRoute`) front them through an existing Gateway — each block
+has its own `gatewayName`/`gatewayNamespace`/`sectionName`/`hostname`,
+deliberately kept separate so the debugger and the viewer can be bound to
+two different Gateways (e.g. one private, one public). The routes need no
+URL/Host rewriting: nginx handles it.
 
 ## Decisions made so far
 
@@ -115,8 +140,6 @@ one private, one public) by whoever deploys this chart.
   single source of truth — the CI pipeline reads it to supply both the
   `ARG CHROMIUM_VERSION`/`ARG XPRA_VERSION` build-arg and the pushed
   image tag. Bump the version by editing that file.
-- `debug-fwd` container name (not `socat`) is intentional — short for
-  "debug forward", describing its role rather than its implementation.
 - Both entrypoints wait on the shared X11 socket in a `sleep 1` loop
   (logging "waiting for X server on ... to be up..." each iteration),
   then touch `/run/server-browser/ready` just before `exec`ing into the
@@ -169,15 +192,11 @@ one private, one public) by whoever deploys this chart.
   — matches the existing per-component `httpRoute` split for the same
   reason. The HTTPRoutes' `backendRefs` point at
   `<fullname>-debugger`/`<fullname>-xpra` accordingly.
-- The debug-forwarding sidecar, its image, resources, securityContext,
-  Service, and HTTPRoute all live nested under `chromium.debug` (not a
-  top-level `debugFwd` block as originally structured) — the debugger
-  is fundamentally a facet of exposing chromium's CDP port, not an
-  independent component, so its config belongs inside `chromium` the
-  same way xpra's own Service/httpRoute live inside `xpra`. The
-  `debug-fwd` container name in the StatefulSet is unchanged; only the
-  values.yaml location and all `.Values.chromium.debug.*` template
-  references moved.
+- The debugger's Service and HTTPRoute live nested under
+  `chromium.debug` (not a top-level block) — the debugger is
+  fundamentally a facet of exposing chromium's CDP port. The nginx proxy
+  that actually serves it (and kasmvnc) has its own top-level `nginx`
+  block (image, ports, resources, securityContext).
 
 ## Progress
 
@@ -186,11 +205,12 @@ one private, one public) by whoever deploys this chart.
   Ingress, ServiceAccount, or generated tests). `helm lint` and
   `helm template` both verified clean, including with persistence and
   both HTTPRoutes enabled.
-- `templates/statefulset.yaml`: 3 containers (`chromium`, `debug-fwd`,
-  `xpra`) wired per the architecture above, each of `chromium`/`xpra`
-  with its own readinessProbe (see the ready-file decision above);
-  `templates/service.yaml` exposes both ports; `templates/httproute-xpra.yaml`
-  and `templates/httproute-debugger.yaml` are independently toggleable.
+- `templates/statefulset.yaml`: up to 3 containers (`chromium`,
+  `kasmvnc`, `nginx`) wired per the architecture above;
+  `templates/configmap-nginx.yaml` renders nginx's config;
+  `templates/service-debugger.yaml`/`service-kasmvnc.yaml` expose nginx's
+  ports; `templates/httproute-kasmvnc.yaml` and
+  `templates/httproute-debugger.yaml` are independently toggleable.
 - `chromium/` (`Dockerfile`, `entrypoint.sh`, `version.txt`) and
   `xpra/` (`Dockerfile`, `entrypoint.sh`, `version.txt`) added at the
   repo root, one self-contained folder per component. Both build
@@ -235,7 +255,7 @@ one private, one public) by whoever deploys this chart.
 - End-to-end runtime verification in an actual Kubernetes cluster
   (deploying the chart with the new KasmVNC-based display layer,
   confirming the init-container permission fix, the shared X11
-  socket/Xauthority wiring, and CDP-through-debug-fwd all work together
+  socket/Xauthority wiring, and CDP-through-nginx all work together
   under real pod scheduling) — so far only verified via disposable
   local Docker containers with the network namespace deliberately
   shared between them to approximate pod conditions (see "Testing

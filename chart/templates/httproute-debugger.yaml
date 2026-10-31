@@ -15,13 +15,7 @@ spec:
   hostnames:
     - {{ .Values.chromium.debug.httpRoute.hostname | quote }}
   rules:
-    # Chromium rejects DevTools HTTP requests whose Host header is not an
-    # IP address or localhost.
-    - filters:
-        - type: URLRewrite
-          urlRewrite:
-            hostname: localhost
-      backendRefs:
+    - backendRefs:
         - name: {{ include "server-browser.fullname" . }}-debugger
           port: {{ .Values.chromium.debug.service.port }}
 {{- end }}

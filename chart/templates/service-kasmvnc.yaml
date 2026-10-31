@@ -9,7 +9,7 @@ spec:
   type: {{ .Values.kasmvnc.service.type }}
   ports:
     - port: {{ .Values.kasmvnc.service.port }}
-      targetPort: kasmvnc
+      targetPort: kasmvnc # nginx's kasmvnc port (nginx.kasmvncPort)
       protocol: TCP
       name: kasmvnc
   selector:

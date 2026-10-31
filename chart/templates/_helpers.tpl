@@ -49,3 +49,21 @@ Selector labels
 app.kubernetes.io/name: {{ include "server-browser.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
+
+{{/*
+Whether the nginx proxy container is rendered: it fronts both kasmvnc and the
+CDP debugger, so it exists when either of them is enabled.
+*/}}
+{{- define "server-browser.nginxEnabled" -}}
+{{- if or .Values.kasmvnc.enabled .Values.chromium.debug.enabled -}}true{{- end -}}
+{{- end }}
+
+{{/*
+INTERNAL KasmVNC credential. KasmVNC has no passwordless mode, so the chart
+uses one fixed credential that is set as VNC_PW on the kasmvnc container and
+injected by nginx into every request it proxies -- users never authenticate
+against KasmVNC and it is intentionally not configurable. KasmVNC itself only
+listens on the pod's loopback, so only nginx can reach it.
+*/}}
+{{- define "server-browser.kasmvncUser" -}}kasm_user{{- end }}
+{{- define "server-browser.kasmvncPassword" -}}server-browser-internal{{- end }}

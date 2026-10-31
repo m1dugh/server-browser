@@ -35,20 +35,19 @@ visible on the other.
 ┌─────────────────────┐         ┌──────────────────────────────────────────────────────────┐
 │       laptop         │         │                      kubernetes pod                        │
 │                       │         │                                                            │
-│  ┌─────────────────┐  │  HTTP   │  ┌──────────┐   X11 socket    ┌────────────────────────┐  │
-│  │ web browser tab  │──┼────────┼─▶│ kasmvnc  │◀───────────────▶│  chromium              │  │
-│  │ (KasmVNC HTML5)   │  │         │  │ (owns    │  (shared volume) │  headful, connects to  │  │
-│  └─────────────────┘  │         │  │  display) │                  │  kasmvnc's display    │  │
-│                       │         │  └──────────┘                  └───────────┬────────────┘  │
-│  ┌─────────────────┐  │  HTTP   │  ┌───────────┐        loopback-only CDP   │                │
-│  │ agent / CDP      │──┼────────┼─▶│ debug-fwd │◀───────────────────────────┘                │
-│  │ client (CDP)     │  │         │  │  (socat)  │                                             │
-│  └─────────────────┘  │         │  └───────────┘                                             │
+│  ┌─────────────────┐  │  HTTP   │  ┌─────────┐ loopback ┌─────────┐ X11 socket ┌──────────┐ │
+│  │ web browser tab  │──┼────────┼─▶│         │─────────▶│ kasmvnc │◀──────────▶│ chromium │ │
+│  │ (KasmVNC HTML5)   │  │         │  │  nginx  │          └─────────┘ (shared    │ headful  │ │
+│  └─────────────────┘  │         │  │ (plain  │                       volume)   └────┬─────┘ │
+│  ┌─────────────────┐  │  HTTP   │  │  HTTP)  │      loopback-only CDP               │       │
+│  │ agent / CDP      │──┼────────┼─▶│         │◀─────────────────────────────────────┘       │
+│  │ client           │  │         │  └─────────┘                                              │
+│  └─────────────────┘  │         │                                                            │
 └─────────────────────┘         └──────────────────────────────────────────────────────────┘
 ```
 
-The pod runs three containers side by side, sharing the same network
-namespace (so `localhost` inside the pod means "any of these three
+The pod runs up to three containers side by side, sharing the same
+network namespace (so `localhost` inside the pod means "any of these
 containers") and, for two of them, the same X11 display:
 
 1. **`kasmvnc`** — owns the pod's X11 display: a real, virtual X server
@@ -56,15 +55,15 @@ containers") and, for two of them, the same X11 display:
    websocket client built in. Open its URL in any web browser and you
    get a live, interactive view of whatever is rendering into that
    display — mouse and keyboard input included — with nothing to
-   install on the viewing end. It launches before `chromium` and never
-   runs any application itself; it only owns the display the `chromium`
-   container connects into.
+   install on the viewing end. It never runs any application itself; it
+   only owns the display the `chromium` container connects into. It
+   serves plain HTTP on the pod's loopback only, so it is reachable
+   solely through `nginx`.
 2. **`chromium`** — a real, headful Chromium browser, connecting to the
    `kasmvnc` container's display as a plain X11 client over a shared
    volume mounted at `/tmp/.X11-unix` in both (plus a second shared
-   volume carrying the X11 authentication cookie `kasmvnc` generates,
-   since KasmVNC's `Xvnc` enforces X11 auth unlike a bare Xvfb). It is
-   started with Chrome DevTools Protocol enabled
+   volume carrying the X11 authentication cookie `kasmvnc` generates).
+   It is started with Chrome DevTools Protocol enabled
    (`--remote-debugging-port=<port>`), which is what lets an external
    client control it: open tabs, navigate, click, read the DOM,
    intercept network traffic, take screenshots, and so on — the same
@@ -74,28 +73,33 @@ containers") and, for two of them, the same X11 display:
    survives a pod restart. When `kasmvnc` is disabled, `chromium` falls
    back to running its own Xvfb instead, for CDP-only use with no
    visual access at all.
-3. **`debug-fwd`** — a small relay sitting between the chromium container
-   and the outside world. Chromium (from version 113 onward) silently
-   forces its remote-debugging interface back to `127.0.0.1` no matter
-   what address is requested, as a security hardening measure — so the
-   CDP port is never actually reachable from outside the `chromium`
-   container on its own. `debug-fwd` is a plain `socat` TCP relay that
-   listens on all interfaces and forwards every connection to that
-   loopback-only CDP port, making it reachable the rest of the pod/
-   cluster via a normal Kubernetes Service.
+3. **`nginx`** — a single plain-HTTP (no TLS) proxy in front of the other
+   two, listening on two ports (one for the KasmVNC viewer, one for the
+   CDP endpoint), with its configuration mounted from a ConfigMap
+   generated by the chart. For the viewer it injects KasmVNC's
+   (internal, fixed) credential into every request, so nobody has to
+   log in to KasmVNC itself. For the debugger it makes chromium
+   reachable at all — Chromium (from version 113 onward) forces its
+   remote-debugging interface to `127.0.0.1` and rejects any `Host`
+   header that isn't an IP or `localhost` — by forwarding to the
+   loopback port with a `localhost` Host header and rewriting the
+   WebSocket URLs in `/json/*` responses to the hostname the client
+   actually used (`wss://` when behind TLS). Proxy buffering is off so
+   the stream stays as smooth as possible.
 
-Both the CDP endpoint (via `debug-fwd`) and the kasmvnc viewer are
-exposed through a Kubernetes `Service`, and optionally through their own
-Gateway API `HTTPRoute` each (kept as two independent routes on purpose,
-so the CDP endpoint and the human-facing viewer can be published through
-two different Gateways — e.g. the CDP endpoint kept private/internal-only
+Both the CDP endpoint and the kasmvnc viewer are exposed through a
+Kubernetes `Service`, and optionally through their own Gateway API
+`HTTPRoute` each (kept as two independent routes on purpose, so the CDP
+endpoint and the human-facing viewer can be published through two
+different Gateways — e.g. the CDP endpoint kept private/internal-only
 for agents, the viewer exposed more broadly for human access, or vice
-versa, depending on the deployment).
+versa, depending on the deployment). TLS, if any, is terminated by the
+Gateway; the pod itself only speaks plain HTTP.
 
-Only the `chromium` container runs by default — `debug-fwd`
-(`chromium.debug.enabled`) and `kasmvnc` (`kasmvnc.enabled`) are both
+Only the `chromium` container runs by default — `kasmvnc`
+(`kasmvnc.enabled`) and the debugger (`chromium.debug.enabled`) are both
 opt-in, each toggled independently in `values.yaml` alongside their own
-`httpRoute.enabled`.
+`httpRoute.enabled`. `nginx` is added automatically when either is on.
 
 ## Why this shape
 
@@ -142,6 +146,6 @@ This is a standalone Helm chart (`chart/`), meant to be usable by
 anyone on any Kubernetes cluster — nothing in this repo assumes or
 hardcodes details of a specific cluster. Every cluster-specific detail
 (image registries, storage class, Gateway names/hostnames, whether
-persistence or either `HTTPRoute` is enabled, kasmvnc auth, and so on)
+persistence or either `HTTPRoute` is enabled, nginx resources, and so on)
 is left to each user to configure through `values.yaml` for their own
 deployment.

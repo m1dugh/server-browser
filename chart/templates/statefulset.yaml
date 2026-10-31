@@ -12,9 +12,14 @@ spec:
       {{- include "server-browser.selectorLabels" . | nindent 6 }}
   template:
     metadata:
-      {{- with .Values.podAnnotations }}
+      {{- if or .Values.podAnnotations (include "server-browser.nginxEnabled" .) }}
       annotations:
+        {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- if include "server-browser.nginxEnabled" . }}
+        checksum/nginx-config: {{ include (print $.Template.BasePath "/configmap-nginx.yaml") . | sha256sum }}
+        {{- end }}
       {{- end }}
       labels:
         {{- include "server-browser.labels" . | nindent 8 }}
@@ -89,25 +94,42 @@ spec:
             {{- end }}
             - name: user-data
               mountPath: /data
-        {{- if .Values.chromium.debug.enabled }}
-        - name: debug-fwd
-          {{- with .Values.chromium.debug.securityContext }}
+        {{- if include "server-browser.nginxEnabled" . }}
+        # Single plain-HTTP proxy in front of kasmvnc and the CDP debugger:
+        # injects kasmvnc's internal credential and rewrites the debugger's
+        # /json/* URLs. Config comes from the <fullname>-nginx ConfigMap.
+        - name: nginx
+          {{- with .Values.nginx.securityContext }}
           securityContext:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          image: "{{ .Values.chromium.debug.image.repository }}:{{ required "chromium.debug.image.tag must be set (no latest)" .Values.chromium.debug.image.tag }}"
-          imagePullPolicy: {{ .Values.chromium.debug.image.pullPolicy }}
-          args:
-            - TCP-LISTEN:{{ .Values.chromium.debug.relayPort }},fork,reuseaddr
-            - TCP:127.0.0.1:{{ .Values.chromium.debuggingPort }}
+          image: "{{ .Values.nginx.image.repository }}:{{ required "nginx.image.tag must be set (no latest)" .Values.nginx.image.tag }}"
+          imagePullPolicy: {{ .Values.nginx.image.pullPolicy }}
           ports:
-            - name: debug
-              containerPort: {{ .Values.chromium.debug.relayPort }}
+            {{- if .Values.kasmvnc.enabled }}
+            - name: kasmvnc
+              containerPort: {{ .Values.nginx.kasmvncPort }}
               protocol: TCP
-          {{- with .Values.chromium.debug.resources }}
+            {{- end }}
+            {{- if .Values.chromium.debug.enabled }}
+            - name: debug
+              containerPort: {{ .Values.nginx.debugPort }}
+              protocol: TCP
+            {{- end }}
+          {{- with .Values.nginx.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+          readinessProbe:
+            tcpSocket:
+              port: {{ ternary "kasmvnc" "debug" (.Values.kasmvnc.enabled | default false) }}
+            initialDelaySeconds: 1
+            periodSeconds: 5
+          volumeMounts:
+            - name: nginx-config
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+              readOnly: true
         {{- end }}
         {{- if .Values.kasmvnc.enabled }}
         - name: kasmvnc
@@ -126,33 +148,33 @@ spec:
               value: {{ .Values.chromium.display.depth | quote }}
             - name: XAUTHORITY
               value: /shared/x11-auth/Xauthority
-            # Kasm's vnc_startup.sh hard-codes -sslOnly; appending
-            # -sslOnly=0 (VNCOPTIONS comes after it) makes KasmVNC serve
-            # plain HTTP/WS. TLS is never handled by KasmVNC itself here --
-            # it is always terminated by the gateway in front of the pod.
+            # Kasm's vnc_startup.sh hard-codes `-sslOnly` and
+            # `-interface 0.0.0.0`; VNCOPTIONS comes after them, so appending
+            # `-sslOnly=0 -interface 127.0.0.1` makes KasmVNC serve plain
+            # HTTP/WS on the pod's loopback only. It is therefore reachable
+            # solely through the nginx container, which terminates nothing
+            # itself (TLS lives at the gateway) and injects the internal
+            # credential below.
             - name: VNCOPTIONS
-              value: "-sslOnly=0"
-            {{- if .Values.kasmvnc.auth.passwordSecretName }}
+              value: "-sslOnly=0 -interface 127.0.0.1"
             - name: VNC_PW
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.kasmvnc.auth.passwordSecretName }}
-                  key: {{ .Values.kasmvnc.auth.passwordSecretKey }}
-            {{- else if .Values.kasmvnc.auth.password }}
-            - name: VNC_PW
-              value: {{ .Values.kasmvnc.auth.password | quote }}
-            {{- end }}
-          ports:
-            - name: kasmvnc
-              containerPort: {{ .Values.kasmvnc.port }}
-              protocol: TCP
+              value: {{ include "server-browser.kasmvncPassword" . | quote }}
           {{- with .Values.kasmvnc.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+          # Bound to loopback, so a kubelet tcpSocket probe (pod IP) cannot
+          # reach it: any HTTP response (even 401) from inside is "up".
           readinessProbe:
-            tcpSocket:
-              port: kasmvnc
+            exec:
+              command:
+                - curl
+                - -s
+                - -o
+                - /dev/null
+                - --max-time
+                - "2"
+                - http://127.0.0.1:{{ .Values.kasmvnc.port }}/
             initialDelaySeconds: 1
             periodSeconds: 5
           volumeMounts:
@@ -174,6 +196,11 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       volumes:
+        {{- if include "server-browser.nginxEnabled" . }}
+        - name: nginx-config
+          configMap:
+            name: {{ include "server-browser.fullname" . }}-nginx
+        {{- end }}
         {{- if .Values.kasmvnc.enabled }}
         - name: x11-socket
           emptyDir: {}
