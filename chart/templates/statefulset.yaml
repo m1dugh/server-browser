@@ -164,6 +164,16 @@ spec:
             # ports nothing needs (see AGENTS.md).
             - name: KASM_SVC_SMARTCARD
               value: "0"
+            - name: KASM_SVC_AUDIO
+              value: "0"
+            - name: KASM_SVC_AUDIO_INPUT
+              value: "0"
+            - name: KASM_SVC_GAMEPAD
+              value: "0"
+            - name: KASM_SVC_PRINTER
+              value: "0"
+            - name: KASM_SVC_WEBCAM
+              value: "0"
           {{- with .Values.kasmvnc.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
