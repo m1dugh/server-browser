@@ -165,11 +165,18 @@ Chromium decisions (all in `chromium/entrypoint.sh` / the chart):
   chromium still logs its D-Bus connection errors (there is no D-Bus
   daemon in the container); the setting is kept as the chosen behaviour
   but does not silence them.
-- **`--disable-background-networking --disable-sync
-  --disable-features=GCM`** are passed to chromium. They reach the
-  browser, but the harmless periodic
-  `Registration response error message: DEPRECATED_ENDPOINT` line still
-  appears.
+- **GCM is silenced with dead endpoints.** Chromium kept retrying a push
+  registration that Google answers with `DEPRECATED_ENDPOINT` (the legacy
+  endpoint is retired), logging `registration_request.cc` errors every
+  few minutes. `--disable-background-networking --disable-sync
+  --disable-features=GCM` did not stop it. The entrypoint also passes
+  `--gcm-registration-url=http://127.0.0.1:9/register
+  --gcm-checkin-url=http://127.0.0.1:9/checkin
+  --gcm-mcs-endpoint=127.0.0.1:9` (port 9 is always refused), so chromium
+  can never check in and the error is no longer logged (local test: 0
+  occurrences over 8 minutes with two tabs open, CDP unaffected, no new
+  error classes). Side effects, unused here: web push subscription,
+  `chrome.gcm` and sync invalidations cannot work.
 - **`CAP_SYS_RESOURCE`** is not granted by default
   (`chromium.securityContext` is `{}`): the `baseline` Pod Security level
   rejects it, so a deployment must allow it at the namespace level before
