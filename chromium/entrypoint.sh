@@ -41,8 +41,9 @@ if [ "${EXTERNAL_DISPLAY:-0}" = "1" ]; then
 
   # The X server accepts connections before kasmvnc's session has started
   # the window manager (xfwm4). A window mapped before then is never put in
-  # the fullscreen state chromium asked for (--start-fullscreen), so it
-  # keeps a title bar. Wait for an EWMH-compliant window manager as well.
+  # the maximized state chromium asked for (--start-maximized), so it keeps
+  # a title bar. Wait for an EWMH-compliant window manager as well: once it
+  # is up, xfwm4's titleless_maximize/borderless_maximize hide the frame.
   extra_check() {
     su-exec chromium xprop -root _NET_SUPPORTING_WM_CHECK 2>/dev/null | grep -q "window id"
   }
@@ -76,6 +77,18 @@ launch() {
   exec su-exec chromium env "$@"
 }
 
+# Window geometry. With an external display (kasmvnc + xfwm4) chromium is
+# maximized to whatever size the display currently has: an explicit
+# --window-size would win over --start-maximized and leave a "normal"
+# window of the configured size, which overflows a smaller display (the
+# viewer resizes it, e.g. 1024x768 against the configured 1920x1080).
+# Only the bare-Xvfb mode (no window manager) needs --window-size.
+if [ "${EXTERNAL_DISPLAY:-0}" = "1" ]; then
+  window_flag="--start-maximized"
+else
+  window_flag="--window-size=${DISPLAY_WIDTH},${DISPLAY_HEIGHT}"
+fi
+
 # No D-Bus daemon runs in this container, so every bus lookup logs a
 # connection error. The session bus address is pointed at `disabled:` (the
 # project's chosen setting, passed through `env` so it survives the
@@ -98,6 +111,5 @@ launch DBUS_SESSION_BUS_ADDRESS=disabled: ${XAUTHORITY:+XAUTHORITY="${XAUTHORITY
   --disable-background-networking \
   --disable-sync \
   --disable-features=GCM \
-  --window-size="${DISPLAY_WIDTH},${DISPLAY_HEIGHT}" \
-  ${EXTERNAL_DISPLAY:+--start-fullscreen} \
+  "${window_flag}" \
   about:blank

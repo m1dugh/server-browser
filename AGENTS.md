@@ -152,14 +152,24 @@ features is available through the viewer when off.
 
 Chromium decisions (all in `chromium/entrypoint.sh` / the chart):
 
-- **Fullscreen, not kiosk.** In the kasmvnc mode chromium starts with
-  `--start-fullscreen`, so it fills the viewer with no window decoration.
-  `--kiosk` is intentionally never used: multiple tabs (and the tab strip)
-  must stay available. The entrypoint also waits for the window manager
+- **Maximized, not fullscreen, not kiosk.** In the kasmvnc mode chromium
+  starts with `--start-maximized`: it fills the viewer, and its tab strip
+  and URL bar stay visible. `--start-fullscreen` was tried and dropped
+  (it hides the tab strip until the pointer reaches the top edge);
+  `--kiosk` is intentionally never used: multiple tabs must stay
+  available. The entrypoint also waits for the window manager
   (`_NET_SUPPORTING_WM_CHECK`) before starting: the X server accepts
   connections before kasmvnc's session has started xfwm4, and a window
-  mapped before the window manager exists never gets the fullscreen state,
-  so it kept a 29px title bar.
+  mapped before the window manager exists never gets the maximized state,
+  so it kept a 29px title bar. With the window manager up first, xfwm4's
+  `titleless_maximize`/`borderless_maximize` (set in the kasmvnc image's
+  `xfwm4.xml`) hide the title bar. In this mode `--window-size` is NOT
+  passed: an explicit size wins over `--start-maximized` and leaves a
+  "normal" 1920x1080 window overflowing the display (the live display is
+  1024x768 whatever `VNC_RESOLUTION` says; the viewer resizes it). Without
+  it chromium is maximized to the actual display (`windowState: maximized`,
+  `_NET_WM_STATE_MAXIMIZED_HORZ/VERT`, frame extents 0,0,0,0). Only the
+  bare-Xvfb mode, which has no window manager, keeps `--window-size`.
 - **`DBUS_SESSION_BUS_ADDRESS=disabled:`** is set on the chromium process.
   Verified against chromium 155: libdbus does not know that transport, so
   chromium still logs its D-Bus connection errors (there is no D-Bus
@@ -485,10 +495,10 @@ wired into the chart):
     container rather than Kasm's.
 
 **Fullscreen/window-manager question — resolved.** Confirmed hands-on:
-chromium's own `--start-maximized` flag (since replaced by
-`--start-fullscreen`, see "Disabled kasmvnc services and chromium
-flags"; originally added to the chromium
-container's own launch command, nothing xfwm4-side needed) makes its
+chromium's own `--start-maximized` flag (added to the chromium
+container's own launch command, nothing xfwm4-side needed; briefly
+replaced by `--start-fullscreen`, then restored — see "Disabled kasmvnc
+services and chromium flags") makes its
 window cover the display exactly edge-to-edge once the panel is
 suppressed — `xwininfo` showed the chromium window at
 `1024x768+0+0`, matching the display's own geometry precisely, with no
@@ -564,8 +574,8 @@ Xauthority file to a `chromium`-owned path, then drops to the
 unprivileged `chromium` user via `su-exec` immediately before `exec`ing
 chromium itself — in both the kasmvnc and plain-Xvfb code paths, so
 chromium itself never actually runs as root either way. `--start-
-maximized` (since replaced by `--start-fullscreen`; added
-unconditionally when `EXTERNAL_DISPLAY=1`) is what
+maximized` (added unconditionally when `EXTERNAL_DISPLAY=1`; briefly
+replaced by `--start-fullscreen`, then restored) is what
 actually makes chromium fill the display edge-to-edge, confirmed
 hands-on (`xwininfo` showed the window within 1px of the full display
 geometry) — this, combined with the panel suppression described above,
