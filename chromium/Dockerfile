@@ -35,6 +35,7 @@ RUN apk add --no-cache \
       xdpyinfo \
       dbus \
       su-exec \
+      libcap \
       ttf-freefont \
       chromium=${CHROMIUM_VERSION}
 

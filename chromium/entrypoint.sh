@@ -50,11 +50,30 @@ wait_for_x
 
 touch /run/server-browser/ready
 
-# No D-Bus daemon runs in this container. Pointing the session bus at the
-# `disabled:` transport stops chromium from logging a connection error for
-# every bus lookup (UPower, notifications, ...); passed through `env` so it
-# survives su-exec.
-exec su-exec chromium env DBUS_SESSION_BUS_ADDRESS=disabled: ${XAUTHORITY:+XAUTHORITY="${XAUTHORITY}"} chromium-browser \
+# Drop to the chromium user and exec "$@" (an `env ...` argument list).
+# su-exec discards every capability on the uid change, so when the container
+# was granted CAP_SYS_RESOURCE (chart default) chromium could never lower its
+# renderers' oom_score_adj and logged "Failed to adjust OOM score of
+# renderer ... Permission denied" on every tab switch. capsh keeps exactly
+# that one capability across the uid change as an ambient capability; when
+# the container wasn't granted it, fall back to plain su-exec.
+launch() {
+  if capsh --has-p=cap_sys_resource >/dev/null 2>&1; then
+    exec capsh --keep=1 --user=chromium \
+      --inh=cap_sys_resource --addamb=cap_sys_resource \
+      --shell=/usr/bin/env -- "$@"
+  fi
+  exec su-exec chromium env "$@"
+}
+
+# No D-Bus daemon runs in this container, so every bus lookup logs a
+# connection error. The session bus address is pointed at `disabled:` (the
+# project's chosen setting, passed through `env` so it survives the
+# privilege drop). Verified against chromium 155: libdbus does not know
+# that transport, so the errors are still logged -- this only makes the
+# failure deterministic (empty address -> unknown address type either way);
+# silencing them takes a real bus or a lower --log-level.
+launch DBUS_SESSION_BUS_ADDRESS=disabled: ${XAUTHORITY:+XAUTHORITY="${XAUTHORITY}"} chromium-browser \
   --no-sandbox \
   --disable-gpu \
   --disable-dev-shm-usage \
