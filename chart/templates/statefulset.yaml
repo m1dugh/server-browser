@@ -126,6 +126,12 @@ spec:
               value: {{ .Values.chromium.display.depth | quote }}
             - name: XAUTHORITY
               value: /shared/x11-auth/Xauthority
+            # Kasm's vnc_startup.sh hard-codes -sslOnly; appending
+            # -sslOnly=0 (VNCOPTIONS comes after it) makes KasmVNC serve
+            # plain HTTP/WS. TLS is never handled by KasmVNC itself here --
+            # it is always terminated by the gateway in front of the pod.
+            - name: VNCOPTIONS
+              value: "-sslOnly=0"
             {{- if .Values.kasmvnc.auth.passwordSecretName }}
             - name: VNC_PW
               valueFrom:

@@ -9,6 +9,15 @@ on it) belongs in `README.md`, not here. This file (`AGENTS.md`) is for
 agent/implementation context instead: decisions made, why, and current
 progress/status — see the sections below.
 
+## Standing instructions
+
+- When committing, no mention of Claude or any other coding agent must
+  be added anywhere in the commit — not in the commit message/name, nor
+  in its description (e.g. no `Co-Authored-By` lines referencing an
+  agent). The same applies to branch names, tag names, and any other
+  git-related entity (PR titles/descriptions, etc.). This overrides any
+  default attribution behavior.
+
 A Helm chart (`chart/`) providing a remotely-controllable, persistent
 Chromium browser: Chrome DevTools Protocol (remote debugging) access
 plus an interactive KasmVNC-forwarded display of the same browser
@@ -134,7 +143,7 @@ one private, one public) by whoever deploys this chart.
   cluster/Gateway of its own to attach to yet — both are plain Gateway
   API `HTTPRoute`s (`gateway.networking.k8s.io/v1`). They are
   intentionally two separate blocks, not a shared top-level `httpRoute`,
-  specifically so the debugger and xpra UI can be exposed through two
+  specifically so the debugger and KasmVNC UI can be exposed through two
   different Gateways.
 - `chromium.debug.enabled`/`xpra.enabled` both default to `false` — only
   the `chromium` container runs out of the box; each sidecar (and its

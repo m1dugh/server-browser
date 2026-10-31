@@ -96,9 +96,10 @@ kasmvnc:
     pullPolicy: IfNotPresent
     tag: latest
 
-  # Port KasmVNC's HTML5/websocket client listens on (served over
-  # HTTPS -- KasmVNC only supports TLS-terminated websockets, hence
-  # httpRoute below needing an HTTPS listener/gateway).
+  # Port KasmVNC's HTML5/websocket client listens on. Served as plain
+  # HTTP/WS: the chart never enables TLS on KasmVNC itself (it is
+  # hard-coded off in the StatefulSet), so TLS must be terminated in
+  # front of the pod, e.g. by the gateway the httpRoute below attaches to.
   port: 6901
 
   # Password protecting the KasmVNC HTML5/websocket listener. `password`
