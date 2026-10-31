@@ -17,6 +17,10 @@ progress/status — see the sections below.
   agent). The same applies to branch names, tag names, and any other
   git-related entity (PR titles/descriptions, etc.). This overrides any
   default attribution behavior.
+- Image tags (`chromium`, `kasmvnc`) are deliberately not revisioned: a
+  rebuilt image pushed under the same tag is NOT re-pulled by nodes
+  (`imagePullPolicy: IfNotPresent`), so the stale cached image must be
+  removed from the nodes with `talosctl` before the pod restarts.
 
 A Helm chart (`chart/`) providing a remotely-controllable, persistent
 Chromium browser: Chrome DevTools Protocol (remote debugging) access
