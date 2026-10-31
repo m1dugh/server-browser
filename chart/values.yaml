@@ -47,13 +47,20 @@ chromium:
   securityContext: {}
 
   # Exposes the CDP debugger endpoint outside the pod: a socat sidecar
-  # relaying 0.0.0.0:debuggingPort -> 127.0.0.1:debuggingPort inside the
+  # relaying 0.0.0.0:relayPort -> 127.0.0.1:debuggingPort inside the
   # pod (working around the chromium >=M113 CDP loopback-only
   # restriction -- see debuggingPort above), plus the Service and
   # optional HTTPRoute fronting it. Disabled by default -- the debugger
   # is opt-in per deployment.
   debug:
     enabled: false
+
+    # Port the socat relay listens on. Must differ from debuggingPort:
+    # socat's 0.0.0.0 listener would otherwise steal chromium's loopback
+    # bind (depending on container start order), and its own
+    # 127.0.0.1:debuggingPort backend would then resolve to itself,
+    # looping connections and spinning the CPU.
+    relayPort: 9223
 
     image:
       repository: alpine/socat

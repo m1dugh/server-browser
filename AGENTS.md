@@ -72,9 +72,14 @@ display session are stateful/singleton by nature) with three containers:
    needed). Chromium >=M113 forces `--remote-debugging-address` back to
    `127.0.0.1` regardless of what's requested, so the CDP port is never
    actually reachable from outside the container as chromium binds it.
-   This container relays `0.0.0.0:<debuggingPort> -> 127.0.0.1:<debuggingPort>`
+   This container relays `0.0.0.0:<relayPort> -> 127.0.0.1:<debuggingPort>`
    inside the pod's network namespace, making the port reachable via the
-   Service.
+   Service (whose `targetPort` is the relay port). `relayPort` (9223) must
+   differ from `debuggingPort`: a relay listening on the same port can
+   take chromium's loopback bind depending on start order, after which
+   its `127.0.0.1` backend resolves to itself and loops. The debugger
+   `HTTPRoute` also rewrites the Host header to `localhost`, since
+   chromium rejects DevTools requests with any other hostname.
 3. **`xpra`** — custom image (no official Xpra Docker image exists
    upstream; it's only packaged via apt/dnf). Shadows/attaches to the
    chromium container's existing X display (`xpra shadow` /

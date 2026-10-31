@@ -9,7 +9,7 @@ spec:
   type: {{ .Values.chromium.debug.service.type }}
   ports:
     - port: {{ .Values.chromium.debug.service.port }}
-      targetPort: debug
+      targetPort: debug # the relay port (chromium.debug.relayPort)
       protocol: TCP
       name: debug
   selector:
