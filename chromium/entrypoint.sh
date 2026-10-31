@@ -85,5 +85,5 @@ launch DBUS_SESSION_BUS_ADDRESS=disabled: ${XAUTHORITY:+XAUTHORITY="${XAUTHORITY
   --disable-sync \
   --disable-features=GCM \
   --window-size="${DISPLAY_WIDTH},${DISPLAY_HEIGHT}" \
-  ${EXTERNAL_DISPLAY:+--start-maximized} \
+  ${EXTERNAL_DISPLAY:+--start-fullscreen} \
   about:blank
