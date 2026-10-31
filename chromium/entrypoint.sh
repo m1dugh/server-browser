@@ -50,7 +50,11 @@ wait_for_x
 
 touch /run/server-browser/ready
 
-exec su-exec chromium env ${XAUTHORITY:+XAUTHORITY="${XAUTHORITY}"} chromium-browser \
+# No D-Bus daemon runs in this container. Pointing the session bus at the
+# `disabled:` transport stops chromium from logging a connection error for
+# every bus lookup (UPower, notifications, ...); passed through `env` so it
+# survives su-exec.
+exec su-exec chromium env DBUS_SESSION_BUS_ADDRESS=disabled: ${XAUTHORITY:+XAUTHORITY="${XAUTHORITY}"} chromium-browser \
   --no-sandbox \
   --disable-gpu \
   --disable-dev-shm-usage \
