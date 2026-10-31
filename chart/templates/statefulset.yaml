@@ -159,6 +159,11 @@ spec:
               value: "-sslOnly=0 -interface 127.0.0.1"
             - name: VNC_PW
               value: {{ include "server-browser.kasmvncPassword" . | quote }}
+            # Kasm side services this deployment never uses are switched off
+            # to save CPU/memory and log noise, and to avoid listening on
+            # ports nothing needs (see AGENTS.md).
+            - name: KASM_SVC_SMARTCARD
+              value: "0"
           {{- with .Values.kasmvnc.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
