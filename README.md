@@ -112,7 +112,7 @@ those two requirements during design. This project builds its own
 minimal `chromium/Dockerfile` (installing `chromium` from Alpine's own
 package repository) and a thin `kasmvnc/Dockerfile` layered on top of
 Kasm Technologies' own Alpine "core" image (KasmVNC + XFCE, no bundled
-browser), configured to suppress XFCE's panel so a single maximized
+browser), configured to suppress XFCE's panel so a single fullscreen
 chromium window fills the display edge-to-edge. See `AGENTS.md` for the
 full comparison, the reasoning behind this specific choice, and current
 project status.

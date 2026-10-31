@@ -106,11 +106,13 @@ containers:
      no gzip, 1-day read/send timeouts) so the VNC stream and CDP
      websockets are as smooth as possible.
 
-Because KasmVNC is loopback-bound, its readinessProbe is an exec `curl`
-against `127.0.0.1` (a kubelet `tcpSocket` probe targets the pod IP and
-would fail). KasmVNC's auxiliary servers (audio/upload/gamepad, ports
-49xx, authenticated with the same internal credential) still listen on
-all interfaces but are not exposed by any Service.
+Because KasmVNC is loopback-bound, a kubelet `tcpSocket` probe (which
+targets the pod IP) would fail, so its readinessProbe is an exec `curl -f`
+against nginx on `nginx.kasmvncPort`. nginx injects the internal
+credential, so the probe is authenticated (a credential-less probe failed
+auth every 5s, which — with the image's `-BlacklistThreshold=0` —
+blacklisted `127.0.0.1`, also nginx's own source address) and no secret
+lands in the pod spec.
 
 Persistence: a PVC backing chromium's `--user-data-dir` (profile, cache,
 cookies, extensions), mounted only into the `chromium` container.
@@ -124,6 +126,58 @@ has its own `gatewayName`/`gatewayNamespace`/`sectionName`/`hostname`,
 deliberately kept separate so the debugger and the viewer can be bound to
 two different Gateways (e.g. one private, one public). The routes need no
 URL/Host rewriting: nginx handles it.
+
+## Disabled kasmvnc services and chromium flags
+
+Kasm's startup script runs a set of optional side services, all on by
+default. This chart **deliberately deactivates every one that is not
+usable or needed here, to save resources that won't be needed anyway**
+(CPU, memory, log noise — ffmpeg/pulseaudio alone cost about 15% of a core
+while idle — and the network exposure of listeners nothing uses; they bind
+all interfaces and share the internal credential). They are plain env vars
+on the `kasmvnc` container in `chart/templates/statefulset.yaml`:
+
+| env var | service switched off | why it is not needed |
+| --- | --- | --- |
+| `KASM_SVC_AUDIO=0` | audio output (pulseaudio + ffmpeg, ports 4901/8081) | a CDP-driven browser does not need sound |
+| `KASM_SVC_AUDIO_INPUT=0` | microphone passthrough | no microphone use |
+| `KASM_SVC_GAMEPAD=0` | gamepad forwarding | no `/dev/input` on the nodes |
+| `KASM_SVC_PRINTER=0` | print-to-PDF relay | not used |
+| `KASM_SVC_WEBCAM=0` | webcam passthrough | no `/dev/video0` on the nodes |
+| `KASM_SVC_SMARTCARD=0` | smartcard bridge + `pcscd` | `pcscd` cannot start in the image (`libsystemd.so.0` missing); the monitor loop restarted it every 3s |
+| `KASM_SVC_UPLOADS=0` | file upload server (port 4902) | Flask development server, not needed for CDP use |
+
+Re-enable one only if its feature is actually wanted; none of these
+features is available through the viewer when off.
+
+Chromium decisions (all in `chromium/entrypoint.sh` / the chart):
+
+- **Fullscreen, not kiosk.** In the kasmvnc mode chromium starts with
+  `--start-fullscreen`, so it fills the viewer with no window decoration.
+  `--kiosk` is intentionally never used: multiple tabs (and the tab strip)
+  must stay available. The entrypoint also waits for the window manager
+  (`_NET_SUPPORTING_WM_CHECK`) before starting: the X server accepts
+  connections before kasmvnc's session has started xfwm4, and a window
+  mapped before the window manager exists never gets the fullscreen state,
+  so it kept a 29px title bar.
+- **`DBUS_SESSION_BUS_ADDRESS=disabled:`** is set on the chromium process.
+  Verified against chromium 155: libdbus does not know that transport, so
+  chromium still logs its D-Bus connection errors (there is no D-Bus
+  daemon in the container); the setting is kept as the chosen behaviour
+  but does not silence them.
+- **`--disable-background-networking --disable-sync
+  --disable-features=GCM`** are passed to chromium. They reach the
+  browser, but the harmless periodic
+  `Registration response error message: DEPRECATED_ENDPOINT` line still
+  appears.
+- **`CAP_SYS_RESOURCE`** is added to the chromium container by default
+  (`chromium.securityContext`) so chromium can lower its renderers'
+  `oom_score_adj`. `su-exec` discards every capability on the uid change,
+  so the entrypoint launches chromium through `capsh` with
+  `cap_sys_resource` as the only ambient capability (falling back to plain
+  `su-exec` when the container was not granted it). Verified: renderers
+  get `oom_score_adj` 300 and the "Failed to adjust OOM score" errors
+  stop. Resource limits are deliberately not set yet.
 
 ## Decisions made so far
 
@@ -418,7 +472,9 @@ wired into the chart):
     container rather than Kasm's.
 
 **Fullscreen/window-manager question — resolved.** Confirmed hands-on:
-chromium's own `--start-maximized` flag (added to the chromium
+chromium's own `--start-maximized` flag (since replaced by
+`--start-fullscreen`, see "Disabled kasmvnc services and chromium
+flags"; originally added to the chromium
 container's own launch command, nothing xfwm4-side needed) makes its
 window cover the display exactly edge-to-edge once the panel is
 suppressed — `xwininfo` showed the chromium window at
@@ -495,7 +551,8 @@ Xauthority file to a `chromium`-owned path, then drops to the
 unprivileged `chromium` user via `su-exec` immediately before `exec`ing
 chromium itself — in both the kasmvnc and plain-Xvfb code paths, so
 chromium itself never actually runs as root either way. `--start-
-maximized` (added unconditionally when `EXTERNAL_DISPLAY=1`) is what
+maximized` (since replaced by `--start-fullscreen`; added
+unconditionally when `EXTERNAL_DISPLAY=1`) is what
 actually makes chromium fill the display edge-to-edge, confirmed
 hands-on (`xwininfo` showed the window within 1px of the full display
 geometry) — this, combined with the panel suppression described above,
