@@ -5,10 +5,11 @@ set -eu
 # (real handshake via xdpyinfo, as the chromium user), not merely until
 # its socket file exists: a stale socket left in a pod-lifetime emptyDir,
 # or an X server that is still starting, makes chromium exit with
-# "Missing X server or $DISPLAY". `prepare` runs before every attempt.
+# "Missing X server or $DISPLAY". `prepare` runs before every attempt, and
+# `extra_check` adds a mode-specific condition on top of the handshake.
 wait_for_x() {
   waited=0
-  until prepare && su-exec chromium xdpyinfo -display "${DISPLAY}" >/dev/null 2>&1; do
+  until prepare && su-exec chromium xdpyinfo -display "${DISPLAY}" >/dev/null 2>&1 && extra_check; do
     if [ $((waited % 30)) -eq 0 ]; then
       echo "waiting for X server on ${DISPLAY} to accept connections (${waited}s)..."
     fi
@@ -37,6 +38,14 @@ if [ "${EXTERNAL_DISPLAY:-0}" = "1" ]; then
     chown chromium:chromium /run/server-browser/xauthority
     export XAUTHORITY=/run/server-browser/xauthority
   }
+
+  # The X server accepts connections before kasmvnc's session has started
+  # the window manager (xfwm4). A window mapped before then is never put in
+  # the fullscreen state chromium asked for (--start-fullscreen), so it
+  # keeps a title bar. Wait for an EWMH-compliant window manager as well.
+  extra_check() {
+    su-exec chromium xprop -root _NET_SUPPORTING_WM_CHECK 2>/dev/null | grep -q "window id"
+  }
 else
   su-exec chromium Xvfb "${DISPLAY}" -screen 0 "${DISPLAY_WIDTH}x${DISPLAY_HEIGHT}x${DISPLAY_DEPTH}" -nolisten tcp &
   XVFB_PID=$!
@@ -44,6 +53,7 @@ else
   trap 'kill "${XVFB_PID}" 2>/dev/null' EXIT INT TERM
 
   prepare() { :; }
+  extra_check() { :; }
 fi
 
 wait_for_x

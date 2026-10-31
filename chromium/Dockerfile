@@ -33,6 +33,7 @@ ARG CHROMIUM_VERSION
 RUN apk add --no-cache \
       xvfb \
       xdpyinfo \
+      xprop \
       dbus \
       su-exec \
       libcap \
