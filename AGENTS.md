@@ -170,6 +170,20 @@ Chromium decisions (all in `chromium/entrypoint.sh` / the chart):
   it chromium is maximized to the actual display (`windowState: maximized`,
   `_NET_WM_STATE_MAXIMIZED_HORZ/VERT`, frame extents 0,0,0,0). Only the
   bare-Xvfb mode, which has no window manager, keeps `--window-size`.
+- **`--keep-alive-for-test` keeps chromium alive with no tabs.** Closing
+  the last tab closes the last window and chromium exits (baseline,
+  verified on chromium 155 by closing the only tab through CDP
+  `Target.closeTarget` and `/json/close/<id>`: process and container
+  exit 0). With the flag the process survives, CDP keeps answering
+  (`Target.getTargets` returns no pages) and `Target.createTarget` opens
+  a new tab; it also survives closing a tab opened later. Alternatives
+  tried: the `BackgroundModeEnabled` policy with a startup window does NOT
+  work (still exits on close, via both CDP methods); policy +
+  `--no-startup-window` survives but only because there is never a window.
+  A startup `about:blank` window is kept on purpose. The flag is test-only
+  upstream, so re-check it after a chromium version bump (`chromium/
+  version.txt`); no entrypoint restart loop is used on top of it by
+  choice. Tested on bare Xvfb only, not with kasmvnc/xfwm4.
 - **`DBUS_SESSION_BUS_ADDRESS=disabled:`** is set on the chromium process.
   Verified against chromium 155: libdbus does not know that transport, so
   chromium still logs its D-Bus connection errors (there is no D-Bus

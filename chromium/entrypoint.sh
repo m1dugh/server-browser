@@ -100,6 +100,11 @@ fi
 # DEPRECATED_ENDPOINT (the legacy endpoint is retired), logging an error
 # every few minutes. The error is accepted: it is harmless here and none of
 # the flags below stop it (see AGENTS.md).
+# --keep-alive-for-test: closing the last tab closes the last window, and
+# chromium then exits (and with it the container). This (test-only) flag
+# keeps the browser process alive with zero windows; CDP keeps answering and
+# Target.createTarget opens a new tab. Verified on chromium 155: the
+# BackgroundModeEnabled policy does NOT achieve this (chromium still exits).
 launch DBUS_SESSION_BUS_ADDRESS=disabled: ${XAUTHORITY:+XAUTHORITY="${XAUTHORITY}"} chromium-browser \
   --no-sandbox \
   --disable-gpu \
@@ -111,5 +116,6 @@ launch DBUS_SESSION_BUS_ADDRESS=disabled: ${XAUTHORITY:+XAUTHORITY="${XAUTHORITY
   --disable-background-networking \
   --disable-sync \
   --disable-features=GCM \
+  --keep-alive-for-test \
   "${window_flag}" \
   about:blank
