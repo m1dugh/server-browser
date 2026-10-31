@@ -168,18 +168,22 @@ spec:
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          # Bound to loopback, so a kubelet tcpSocket probe (pod IP) cannot
-          # reach it: any HTTP response (even 401) from inside is "up".
+          # KasmVNC is bound to loopback, so a kubelet tcpSocket probe (pod
+          # IP) cannot reach it. Probe it through nginx instead: nginx injects
+          # the internal credential, so the request is authenticated (a
+          # credential-less probe was failing auth every 5s, which blacklisted
+          # 127.0.0.1 -- also nginx's source address) and nothing secret is
+          # written into the pod spec. -f fails on any HTTP error status.
           readinessProbe:
             exec:
               command:
                 - curl
-                - -s
+                - -fsS
                 - -o
                 - /dev/null
                 - --max-time
                 - "2"
-                - http://127.0.0.1:{{ .Values.kasmvnc.port }}/
+                - http://127.0.0.1:{{ .Values.nginx.kasmvncPort }}/
             initialDelaySeconds: 1
             periodSeconds: 5
           volumeMounts:
