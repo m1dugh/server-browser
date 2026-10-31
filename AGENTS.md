@@ -170,14 +170,17 @@ Chromium decisions (all in `chromium/entrypoint.sh` / the chart):
   browser, but the harmless periodic
   `Registration response error message: DEPRECATED_ENDPOINT` line still
   appears.
-- **`CAP_SYS_RESOURCE`** is added to the chromium container by default
-  (`chromium.securityContext`) so chromium can lower its renderers'
-  `oom_score_adj`. `su-exec` discards every capability on the uid change,
-  so the entrypoint launches chromium through `capsh` with
-  `cap_sys_resource` as the only ambient capability (falling back to plain
-  `su-exec` when the container was not granted it). Verified: renderers
-  get `oom_score_adj` 300 and the "Failed to adjust OOM score" errors
-  stop. Resource limits are deliberately not set yet.
+- **`CAP_SYS_RESOURCE`** is not granted by default
+  (`chromium.securityContext` is `{}`): the `baseline` Pod Security level
+  rejects it, so a deployment must allow it at the namespace level before
+  adding it. The entrypoint can use it: `su-exec` discards every capability
+  on the uid change, so when the container was granted it the entrypoint
+  launches chromium through `capsh` with `cap_sys_resource` as the only
+  ambient capability (renderers then get `oom_score_adj` 300). Without it
+  the entrypoint falls back to plain `su-exec`, chromium works normally,
+  and the harmless "Failed to adjust OOM score" line is logged on tab
+  switches. Resource requests/limits are set per deployment through
+  `chromium.resources` (none by default).
 
 ## Decisions made so far
 
