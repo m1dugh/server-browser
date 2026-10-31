@@ -1,42 +1,52 @@
 #!/bin/sh
 set -eu
 
+# Block until the X server on ${DISPLAY} actually accepts a connection
+# (real handshake via xdpyinfo, as the chromium user), not merely until
+# its socket file exists: a stale socket left in a pod-lifetime emptyDir,
+# or an X server that is still starting, makes chromium exit with
+# "Missing X server or $DISPLAY". `prepare` runs before every attempt.
+wait_for_x() {
+  waited=0
+  until prepare && su-exec chromium xdpyinfo -display "${DISPLAY}" >/dev/null 2>&1; do
+    if [ $((waited % 30)) -eq 0 ]; then
+      echo "waiting for X server on ${DISPLAY} to accept connections (${waited}s)..."
+    fi
+    waited=$((waited + 1))
+    sleep 1
+  done
+  echo "X server on ${DISPLAY} is up"
+}
+
 if [ "${EXTERNAL_DISPLAY:-0}" = "1" ]; then
-  # A sidecar (kasmvnc) owns the X11 display -- wait for its socket
-  # instead of starting our own Xvfb. kasmvnc is started with
-  # XAUTHORITY pointed at a path on a volume shared (read-only here)
-  # with this container; since all containers in a pod share the same
-  # network namespace (and so the same hostname), the X11 authority
-  # entries kasmvnc wrote under its own hostname resolve correctly for
-  # this container too -- no cookie extraction or local xauth database
-  # needed.
-  until [ -S "/tmp/.X11-unix/X${DISPLAY#:}" ]; do
-    echo "waiting for X server on ${DISPLAY} to be up..."
-    sleep 1
-  done
-
-  until [ -s /run/server-browser/x11-auth/Xauthority ]; do
-    echo "waiting for X11 auth cookie to be up..."
-    sleep 1
-  done
-
+  # A sidecar (kasmvnc) owns the X11 display -- wait for it instead of
+  # starting our own Xvfb. kasmvnc is started with XAUTHORITY pointed at
+  # a path on a volume shared (read-only here) with this container; since
+  # all containers in a pod share the same network namespace (and so the
+  # same hostname), the X11 authority entries kasmvnc wrote under its own
+  # hostname resolve correctly for this container too -- no cookie
+  # extraction or local xauth database needed.
+  #
   # kasmvnc's Xauthority is always written 0600, owned by its own
   # (different) uid -- unreadable by the chromium user this entrypoint
   # drops to below. Copy it to a chromium-owned path while still root.
-  cp /run/server-browser/x11-auth/Xauthority /run/server-browser/xauthority
-  chown chromium:chromium /run/server-browser/xauthority
-  export XAUTHORITY=/run/server-browser/xauthority
+  # Done on every attempt, since kasmvnc rewrites it when it restarts.
+  prepare() {
+    [ -s /run/server-browser/x11-auth/Xauthority ] || return 1
+    cp /run/server-browser/x11-auth/Xauthority /run/server-browser/xauthority
+    chown chromium:chromium /run/server-browser/xauthority
+    export XAUTHORITY=/run/server-browser/xauthority
+  }
 else
   su-exec chromium Xvfb "${DISPLAY}" -screen 0 "${DISPLAY_WIDTH}x${DISPLAY_HEIGHT}x${DISPLAY_DEPTH}" -nolisten tcp &
   XVFB_PID=$!
 
   trap 'kill "${XVFB_PID}" 2>/dev/null' EXIT INT TERM
 
-  until [ -S "/tmp/.X11-unix/X${DISPLAY#:}" ]; do
-    echo "waiting for X server on ${DISPLAY} to be up..."
-    sleep 1
-  done
+  prepare() { :; }
 fi
+
+wait_for_x
 
 touch /run/server-browser/ready
 

@@ -32,6 +32,7 @@ ARG CHROMIUM_VERSION
 
 RUN apk add --no-cache \
       xvfb \
+      xdpyinfo \
       dbus \
       su-exec \
       ttf-freefont \

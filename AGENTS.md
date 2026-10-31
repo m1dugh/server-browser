@@ -140,9 +140,16 @@ URL/Host rewriting: nginx handles it.
   single source of truth — the CI pipeline reads it to supply both the
   `ARG CHROMIUM_VERSION`/`ARG XPRA_VERSION` build-arg and the pushed
   image tag. Bump the version by editing that file.
-- Both entrypoints wait on the shared X11 socket in a `sleep 1` loop
-  (logging "waiting for X server on ... to be up..." each iteration),
-  then touch `/run/server-browser/ready` just before `exec`ing into the
+- The chromium entrypoint waits until the X server actually accepts a
+  connection (an `xdpyinfo` handshake as the chromium user, with the
+  copied Xauthority cookie in `EXTERNAL_DISPLAY=1` mode, re-copied on
+  every attempt) — not merely until the socket file exists, since a
+  stale socket in the pod-lifetime emptyDir or a still-starting kasmvnc
+  made chromium exit with "Missing X server or $DISPLAY". It logs once,
+  then every 30s. The xpra entrypoint waits on the shared X11 socket in
+  a `sleep 1` loop (logging "waiting for X server on ... to be up..."
+  each iteration). Both then touch `/run/server-browser/ready` just
+  before `exec`ing into the
   long-running process (chromium / `xpra shadow`) — `exec` replaces the
   shell, so the ready-file write has to happen immediately before it,
   not after. Each container's own readinessProbe in
