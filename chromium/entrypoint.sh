@@ -85,11 +85,8 @@ launch() {
 # silencing them takes a real bus or a lower --log-level.
 # GCM: chromium keeps retrying a registration that Google answers with
 # DEPRECATED_ENDPOINT (the legacy endpoint is retired), logging an error
-# every few minutes. --disable-features=GCM does not stop it. The three
-# --gcm-* switches send the registration, check-in and MCS endpoints to
-# 127.0.0.1:9 (always refused), so chromium can never check in and the
-# error is no longer logged. Side effects: web push subscription,
-# chrome.gcm and sync invalidations cannot work -- unused here.
+# every few minutes. The error is accepted: it is harmless here and none of
+# the flags below stop it (see AGENTS.md).
 launch DBUS_SESSION_BUS_ADDRESS=disabled: ${XAUTHORITY:+XAUTHORITY="${XAUTHORITY}"} chromium-browser \
   --no-sandbox \
   --disable-gpu \
@@ -101,9 +98,6 @@ launch DBUS_SESSION_BUS_ADDRESS=disabled: ${XAUTHORITY:+XAUTHORITY="${XAUTHORITY
   --disable-background-networking \
   --disable-sync \
   --disable-features=GCM \
-  --gcm-registration-url=http://127.0.0.1:9/register \
-  --gcm-checkin-url=http://127.0.0.1:9/checkin \
-  --gcm-mcs-endpoint=127.0.0.1:9 \
   --window-size="${DISPLAY_WIDTH},${DISPLAY_HEIGHT}" \
   ${EXTERNAL_DISPLAY:+--start-fullscreen} \
   about:blank

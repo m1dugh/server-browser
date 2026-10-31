@@ -165,18 +165,21 @@ Chromium decisions (all in `chromium/entrypoint.sh` / the chart):
   chromium still logs its D-Bus connection errors (there is no D-Bus
   daemon in the container); the setting is kept as the chosen behaviour
   but does not silence them.
-- **GCM is silenced with dead endpoints.** Chromium kept retrying a push
-  registration that Google answers with `DEPRECATED_ENDPOINT` (the legacy
-  endpoint is retired), logging `registration_request.cc` errors every
-  few minutes. `--disable-background-networking --disable-sync
-  --disable-features=GCM` did not stop it. The entrypoint also passes
-  `--gcm-registration-url=http://127.0.0.1:9/register
-  --gcm-checkin-url=http://127.0.0.1:9/checkin
-  --gcm-mcs-endpoint=127.0.0.1:9` (port 9 is always refused), so chromium
-  can never check in and the error is no longer logged (local test: 0
-  occurrences over 8 minutes with two tabs open, CDP unaffected, no new
-  error classes). Side effects, unused here: web push subscription,
-  `chrome.gcm` and sync invalidations cannot work.
+- **The GCM `DEPRECATED_ENDPOINT` error is accepted and stays.** Chromium
+  keeps retrying a push registration that Google answers with
+  `DEPRECATED_ENDPOINT` (the legacy endpoint is retired), logging a
+  `registration_request.cc` error about every 1-4 minutes; it is harmless
+  and has no functional impact for this use case. `--disable-features=GCM
+  --disable-background-networking --disable-sync` and managed policies do
+  not remove it. Pointing `--gcm-registration-url`, `--gcm-checkin-url` and
+  `--gcm-mcs-endpoint` at a dead local port (`127.0.0.1:9`) removed
+  `DEPRECATED_ENDPOINT` on a fresh profile, but on the live pod, with its
+  persistent `/data` profile, it was replaced by two other recurring errors
+  (`connection_factory_impl.cc:427 Failed to connect to MCS endpoint with
+  error -105` and `registration_request.cc:275 Registration URL fetching
+  failed`) about every 80 s, so it was reverted. Why the fresh and the
+  persistent profile differ is unconfirmed (possibly persisted GCM state or
+  server-supplied endpoints in the profile).
 - **`CAP_SYS_RESOURCE`** is not granted by default
   (`chromium.securityContext` is `{}`): the `baseline` Pod Security level
   rejects it, so a deployment must allow it at the namespace level before
