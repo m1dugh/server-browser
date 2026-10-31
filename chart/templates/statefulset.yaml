@@ -95,7 +95,7 @@ spec:
           securityContext:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          image: "{{ .Values.chromium.debug.image.repository }}:{{ .Values.chromium.debug.image.tag | default "latest" }}"
+          image: "{{ .Values.chromium.debug.image.repository }}:{{ required "chromium.debug.image.tag must be set (no latest)" .Values.chromium.debug.image.tag }}"
           imagePullPolicy: {{ .Values.chromium.debug.image.pullPolicy }}
           args:
             - TCP-LISTEN:{{ .Values.chromium.debuggingPort }},fork,reuseaddr
