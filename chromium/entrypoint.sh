@@ -81,6 +81,9 @@ launch DBUS_SESSION_BUS_ADDRESS=disabled: ${XAUTHORITY:+XAUTHORITY="${XAUTHORITY
   --remote-debugging-port="${DEBUGGING_PORT}" \
   --remote-debugging-address=0.0.0.0 \
   --no-first-run \
+  --disable-background-networking \
+  --disable-sync \
+  --disable-features=GCM \
   --window-size="${DISPLAY_WIDTH},${DISPLAY_HEIGHT}" \
   ${EXTERNAL_DISPLAY:+--start-maximized} \
   about:blank
